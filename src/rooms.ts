@@ -3,7 +3,7 @@
  * es un módulo de estado en memoria, testeable de forma aislada.
  */
 
-import { createInitialState, playMove, resetGame, applyTurnTimeout } from "./logic.js";
+import { createInitialState, playMove, resetGame, applyTurnTimeout, nextEligiblePlayerIndex } from "./logic.js";
 import type { GameState, Player, TimerConfig, LifeConfig } from "./logic.js";
 import {
   createInitialAbilitiesState,
@@ -13,6 +13,15 @@ import {
   useGloboPintura as abilityGloboPintura,
   useRelojRoto as abilityRelojRoto,
   useMalversionFondos as abilityMalversionFondos,
+  usePostcognicion as abilityPostcognicion,
+  useBrujula as abilityBrujula,
+  useAcelerador as abilityAcelerador,
+  applyAceleradorLateness,
+  tickAcelerador,
+  checkPapaCalienteSlow,
+  useActivatePapaCaliente as abilityActivatePapa,
+  usePassPapaCaliente as abilityPassPapa,
+  settlePapaCalienteAfterTurn,
   consumeEffectsForTurn,
   reshuffleHandForTurn,
 } from "./abilities.js";
@@ -101,6 +110,28 @@ function consumeEffectsForNewTurn(room: Room, previousPlayerId: number | null = 
   const result = consumeEffectsForTurn(room.abilities, currentPlayer.id);
   room.abilities = result.abilities;
   return result.consumed;
+}
+
+/**
+ * Si el turno de `endedPlayerId` terminó de verdad (turnHistory creció respecto
+ * a `historyLenBefore`): aplica el daño por tardanza del Acelerador (si está vivo)
+ * y, salvo `skipPapa`, el conteo/explosión de Papa Caliente. `skipPapa` es para
+ * tomar/pasar la papa: ese turno no cuenta como turno sosteniéndola.
+ */
+function settleTurnEnd(
+  room: Room,
+  endedPlayerId: number | null,
+  historyLenBefore: number,
+  turnStartedBefore: number,
+  skipPapa = false
+): void {
+  if (endedPlayerId === null) return;
+  if (room.abilities.turnHistory.length <= historyLenBefore) return;
+  room.game = applyAceleradorLateness(room.game, room.abilities, endedPlayerId, turnStartedBefore, Date.now());
+  if (skipPapa) return;
+  const settled = settlePapaCalienteAfterTurn(room.game, room.abilities, endedPlayerId, turnStartedBefore, Date.now());
+  room.game = settled.game;
+  room.abilities = settled.abilities;
 }
 
 export class RoomManager {
@@ -252,7 +283,20 @@ export class RoomManager {
       return { error: "Estás eliminado y ya no puedes jugar." };
     }
 
+    const cellBefore = room.game.board[index];
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     room.game = playMove(room.game, index, disconnectedIds(room));
+    // Si la celda pasó de vacía a ocupada, la jugada fue válida y cuenta como
+    // turno jugado: registrarlo en turnHistory (Brújula lo necesita).
+    if (cellBefore == null && room.game.board[index] != null) {
+      room.abilities = {
+        ...room.abilities,
+        turnHistory: [...room.abilities.turnHistory, currentPlayer.id],
+        globalTurnIndex: room.abilities.globalTurnIndex + 1,
+      };
+    }
+    settleTurnEnd(room, currentPlayer.id, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, currentPlayer.id);
     return { room, consumedEffects };
   }
@@ -267,7 +311,19 @@ export class RoomManager {
     const room = this.rooms.get(code.toUpperCase());
     if (!room) return { error: "La sala ya no existe." };
     const previousPlayerId = room.game.players[room.game.currentPlayerIndex]?.id ?? null;
+    const indexBefore = room.game.currentPlayerIndex;
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     room.game = applyTurnTimeout(room.game, disconnectedIds(room));
+    // Si el turno cambió de jugador por el timeout, ese turno cuenta en el historial.
+    if (previousPlayerId !== null && room.game.currentPlayerIndex !== indexBefore) {
+      room.abilities = {
+        ...room.abilities,
+        turnHistory: [...room.abilities.turnHistory, previousPlayerId],
+        globalTurnIndex: room.abilities.globalTurnIndex + 1,
+      };
+    }
+    settleTurnEnd(room, previousPlayerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, previousPlayerId);
     return { room, consumedEffects };
   }
@@ -313,10 +369,13 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityChicharron(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Chicharrón ahora mismo." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -328,10 +387,13 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityGoyslop(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Goyslop ahora mismo." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -343,10 +405,13 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityBalanza(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Balanza ahora mismo." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -362,10 +427,13 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityGloboPintura(room.game, room.abilities, playerId, targetPlayerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Globo de Pintura sobre ese objetivo." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -381,10 +449,53 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityMalversionFondos(room.game, room.abilities, playerId, targetCellIndex, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Malversión de Fondos sobre esa casilla." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
+    const consumedEffects = consumeEffectsForNewTurn(room, playerId);
+    return { room, consumedEffects };
+  }
+
+  /**
+   * Postcognición: copia la habilidad activa de un jugador objetivo y la
+   * ejecuta con quien usa Postcognición como actor. Ver usePostcognicion en
+   * abilities.ts para el detalle completo (incluye qué habilidades son
+   * copiables y por qué). secondaryTargetPlayerId/secondaryTargetCellIndex
+   * solo aplican si la habilidad copiada a su vez necesita un objetivo.
+   */
+  usePostcognicion(
+    code: string,
+    playerId: number,
+    targetPlayerId: number,
+    secondaryTargetPlayerId?: number,
+    secondaryTargetCellIndex?: number,
+    secondaryStepsBack?: number
+  ): { room: Room; consumedEffects: ActiveEffect[] } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    const turnError = this.validateOwnTurn(room, playerId);
+    if (turnError) return { error: turnError };
+
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
+    const result = abilityPostcognicion(
+      room.game,
+      room.abilities,
+      playerId,
+      targetPlayerId,
+      secondaryTargetPlayerId,
+      secondaryTargetCellIndex,
+      secondaryStepsBack,
+      disconnectedIds(room)
+    );
+    if (!result) return { error: "No puedes usar Postcognición sobre ese objetivo." };
+    room.game = result.game;
+    room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -396,10 +507,95 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityRelojRoto(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Reloj Roto ahora mismo." };
     room.game = result.game;
     room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
+    const consumedEffects = consumeEffectsForNewTurn(room, playerId);
+    return { room, consumedEffects };
+  }
+
+  /** Brújula Mal Imantada: retrocede el turno `stepsBack` jugadores. Ver useBrujula en abilities.ts. */
+  useBrujula(
+    code: string,
+    playerId: number,
+    stepsBack: number
+  ): { room: Room; consumedEffects: ActiveEffect[] } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    const turnError = this.validateOwnTurn(room, playerId);
+    if (turnError) return { error: turnError };
+
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
+    const result = abilityBrujula(room.game, room.abilities, playerId, stepsBack, disconnectedIds(room));
+    if (!result) return { error: "No puedes usar Brújula Mal Imantada con ese número de turnos." };
+    room.game = result.game;
+    room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
+    const consumedEffects = consumeEffectsForNewTurn(room, playerId);
+    return { room, consumedEffects };
+  }
+
+  /** Papa Caliente (tomarla): solo si nadie la tiene. Ver useActivatePapaCaliente en abilities.ts. */
+  useActivatePapaCaliente(code: string, playerId: number): { room: Room; consumedEffects: ActiveEffect[] } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    const turnError = this.validateOwnTurn(room, playerId);
+    if (turnError) return { error: turnError };
+
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
+    const result = abilityActivatePapa(room.game, room.abilities, playerId, disconnectedIds(room));
+    if (!result) return { error: "No puedes tomar la Papa Caliente ahora mismo." };
+    room.game = result.game;
+    room.abilities = result.abilities;
+    // skipPapa: el turno en que se toma la papa no cuenta como turno sostenido.
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore, true);
+    const consumedEffects = consumeEffectsForNewTurn(room, playerId);
+    return { room, consumedEffects };
+  }
+
+  /** Papa Caliente (pasarla): solo el dueño actual, a un objetivo válido. Ver usePassPapaCaliente en abilities.ts. */
+  usePassPapaCaliente(
+    code: string,
+    playerId: number,
+    targetPlayerId: number
+  ): { room: Room; consumedEffects: ActiveEffect[] } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    const turnError = this.validateOwnTurn(room, playerId);
+    if (turnError) return { error: turnError };
+
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
+    const result = abilityPassPapa(room.game, room.abilities, playerId, targetPlayerId, disconnectedIds(room));
+    if (!result) return { error: "No puedes pasar la Papa Caliente a ese jugador." };
+    room.game = result.game;
+    room.abilities = result.abilities;
+    // skipPapa: pasarla es precisamente no sostenerla.
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore, true);
+    const consumedEffects = consumeEffectsForNewTurn(room, playerId);
+    return { room, consumedEffects };
+  }
+
+  /** Acelerador de Partículas: vota para activar el efecto colectivo. Ver useAcelerador en abilities.ts. */
+  useAcelerador(code: string, playerId: number): { room: Room; consumedEffects: ActiveEffect[] } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    const turnError = this.validateOwnTurn(room, playerId);
+    if (turnError) return { error: turnError };
+
+    const historyLenBefore = room.abilities.turnHistory.length;
+    const turnStartedBefore = room.game.turnStartedAt;
+    const result = abilityAcelerador(room.game, room.abilities, playerId, disconnectedIds(room));
+    if (!result) return { error: "No puedes usar el Acelerador de Partículas ahora mismo." };
+    room.game = result.game;
+    room.abilities = result.abilities;
+    settleTurnEnd(room, playerId, historyLenBefore, turnStartedBefore);
     const consumedEffects = consumeEffectsForNewTurn(room, playerId);
     return { room, consumedEffects };
   }
@@ -505,6 +701,54 @@ export class RoomManager {
     return [...this.rooms.values()].filter(
       (r) => r.game.status.kind === "playing" && r.game.timerConfig.mode !== "none"
     );
+  }
+
+  /**
+   * Efectos que corren con el reloj (no con las jugadas): cobro en vivo del
+   * Acelerador de Partículas y ventana de segundosParaJugar de la Papa Caliente.
+   * El servidor lo llama cada segundo; devuelve solo las salas que cambiaron.
+   * Si el daño elimina a quien tenía el turno (y la partida sigue), el turno avanza.
+   */
+  tickLiveEffects(now: number = Date.now()): { room: Room; consumedEffects: ActiveEffect[] }[] {
+    const changed: { room: Room; consumedEffects: ActiveEffect[] }[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.game.status.kind !== "playing") continue;
+      const gameBefore = room.game;
+      const abilitiesBefore = room.abilities;
+
+      const acc = tickAcelerador(room.game, room.abilities, now);
+      room.game = acc.game;
+      room.abilities = acc.abilities;
+      if (room.game.status.kind === "playing") {
+        const slow = checkPapaCalienteSlow(room.game, room.abilities, now);
+        room.game = slow.game;
+        room.abilities = slow.abilities;
+      }
+
+      if (room.game === gameBefore && room.abilities === abilitiesBefore) continue;
+
+      let consumedEffects: ActiveEffect[] = [];
+      if (room.game.status.kind === "playing") {
+        const current = room.game.players[room.game.currentPlayerIndex];
+        if (current && current.eliminated) {
+          // El efecto eliminó a quien tenía el turno: se salta, como al auto-eliminarse con Goyslop.
+          const next = nextEligiblePlayerIndex(room.game.players, room.game.currentPlayerIndex, disconnectedIds(room));
+          room.abilities = {
+            ...room.abilities,
+            turnHistory: [...room.abilities.turnHistory, current.id],
+            globalTurnIndex: room.abilities.globalTurnIndex + 1,
+          };
+          room.game = {
+            ...room.game,
+            currentPlayerIndex: next !== null ? next : room.game.currentPlayerIndex,
+            turnStartedAt: Date.now(),
+          };
+          consumedEffects = consumeEffectsForNewTurn(room, current.id);
+        }
+      }
+      changed.push({ room, consumedEffects });
+    }
+    return changed;
   }
 
   roomCount(): number {

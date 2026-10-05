@@ -9,12 +9,14 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.10",
     "@types/node": "^20.14.9",
-    "typescript": "^5.5.4",
-    "tsx": "^4.16.2"
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
   }
 }

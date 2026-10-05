@@ -56,7 +56,8 @@ export type AbilitiesConfig = {
 export interface PapaCalienteState {
   holderId: number | null; // quién la tiene ahora mismo, null si nadie la ha activado todavía
   turnsHeld: number; // turnos que lleva EL DUEÑO ACTUAL sin pasarla ni recibirla-y-jugar
-  awaitingPlay: boolean; // true si acaba de pasarse y el nuevo dueño debe jugar rápido (ventana de segundosParaJugar)
+  awaitingPlay: boolean; // true desde que se pasa hasta que termina el PRIMER turno del nuevo dueño: en ese turno solo tiene segundosParaJugar segundos o la papa explota
+  passedOnce: boolean; // true si la papa ya se pasó al menos una vez desde que se activó (el dueño actual la recibió → aplica turnosParaRepasar)
 }
 
 /** Estado de Acelerador de Partículas: votos acumulados para activar el efecto colectivo. */
@@ -101,6 +102,7 @@ export interface AbilitiesState {
   activeEffects: ActiveEffect[];
   turnHistory: number[]; // ids de jugador en el orden en que jugaron cada turno global (para Brújula)
   globalTurnIndex: number; // contador de turnos absolutos desde el inicio de la partida (para fase tardía y Brújula)
+  aceleradorTick: { stamp: number; applied: number }; // ticks de daño del Acelerador ya cobrados en el turno cuyo turnStartedAt es `stamp` (evita cobrar dos veces)
 }
 
 export function createInitialAbilitiesState(config: AbilitiesConfig, shuffle: ShuffleConfig | null = null): AbilitiesState {
@@ -109,11 +111,12 @@ export function createInitialAbilitiesState(config: AbilitiesConfig, shuffle: Sh
     assigned: {},
     shuffle,
     noConsumeUsesRemaining: shuffle?.noConsumeUsesPerTurn ?? 0,
-    papaCaliente: { holderId: null, turnsHeld: 0, awaitingPlay: false },
+    papaCaliente: { holderId: null, turnsHeld: 0, awaitingPlay: false, passedOnce: false },
     acelerador: { activatedByPlayerIds: [], effectLive: false },
     activeEffects: [],
     turnHistory: [],
     globalTurnIndex: 0,
+    aceleradorTick: { stamp: 0, applied: 0 },
   };
 }
 
@@ -138,11 +141,17 @@ export function hasAbility(state: AbilitiesState, playerId: number, id: AbilityI
  * Habilidades que SIEMPRE consumen el turno completo, sin importar si el
  * sistema de Shuffle está activo o cuántos usos-sin-consumo (Z) le queden al
  * jugador. Es una propiedad fija de cada habilidad, no algo que el creador
- * configure — hoy son Chicharrón y Balanza; el resto del catálogo no consume
+ * configure — hoy son Chicharrón, Balanza, Brújula, Papa Caliente y Acelerador de Partículas; el resto del catálogo no consume
  * turno cuando Shuffle está activo (sí lo consumen, como siempre, cuando
  * Shuffle está desactivado — ver shouldConsumeTurn más abajo).
  */
-const ALWAYS_CONSUMES_TURN: ReadonlySet<AbilityId> = new Set(["chicharron", "balanza"]);
+const ALWAYS_CONSUMES_TURN: ReadonlySet<AbilityId> = new Set([
+  "chicharron",
+  "balanza",
+  "brujula_mal_imantada", // transfiere el turno a otro jugador: no tiene sentido sin consumir el propio
+  "papa_caliente", // tomar/pasar la papa consume turno siempre (ver useActivatePapaCaliente / usePassPapaCaliente)
+  "acelerador_particulas", // votar para activarlo consume turno siempre (ver useAcelerador)
+]);
 
 /**
  * Elige X habilidades al azar del pool de Y (sin repetir dentro de la mano).
@@ -510,6 +519,7 @@ const NO_TARGET_ABILITIES: ReadonlySet<AbilityId> = new Set(["chicharron", "goys
  * habilidad activa"). Puede copiar cualquier habilidad del catálogo,
  * incluida otra Postcognición o Malversión de Fondos.
  *
+ * `secondaryStepsBack` es el número de turnos si la copiada es Brújula.
  * `secondaryTargetPlayerId`/`secondaryTargetCellIndex` se usan SOLO si la
  * habilidad copiada a su vez necesita un objetivo propio (ej. si copias
  * Globo de Pintura, necesitas indicar a quién se lo tiras; si copias
@@ -528,6 +538,7 @@ export function usePostcognicion(
   targetPlayerId: number,
   secondaryTargetPlayerId?: number,
   secondaryTargetCellIndex?: number,
+  secondaryStepsBack?: number,
   disconnectedIds: Set<number> = new Set()
 ): { game: GameState; abilities: AbilitiesState } | null {
   if (!hasAbility(abilities, playerId, "postcognicion")) return null;
@@ -570,6 +581,24 @@ export function usePostcognicion(
       if (secondaryTargetCellIndex === undefined) return null;
       result = useMalversionFondos(game, lentAbilities, playerId, secondaryTargetCellIndex, disconnectedIds);
       break;
+    case "papa_caliente":
+      // Sin dueño: tomarla. Si quien usa Postcognición es el dueño: pasarla a
+      // secondaryTargetPlayerId. Si la tiene otro: no se puede copiar.
+      if (lentAbilities.papaCaliente.holderId === null) {
+        result = useActivatePapaCaliente(game, lentAbilities, playerId, disconnectedIds);
+      } else if (lentAbilities.papaCaliente.holderId === playerId && secondaryTargetPlayerId !== undefined) {
+        result = usePassPapaCaliente(game, lentAbilities, playerId, secondaryTargetPlayerId, disconnectedIds);
+      } else {
+        return null;
+      }
+      break;
+    case "acelerador_particulas":
+      result = useAcelerador(game, lentAbilities, playerId, disconnectedIds);
+      break;
+    case "brujula_mal_imantada":
+      if (secondaryStepsBack === undefined) return null;
+      result = useBrujula(game, lentAbilities, playerId, secondaryStepsBack, disconnectedIds);
+      break;
     case "postcognicion":
       // Copiar Postcognición sobre sí misma sin un objetivo terciario no
       // tiene forma sensata de resolverse en una sola llamada — se trata
@@ -577,9 +606,7 @@ export function usePostcognicion(
       // de copiar-copias. El resto del catálogo sí es copiable normalmente.
       return null;
     default:
-      // papa_caliente, acelerador_particulas, brujula_mal_imantada: cada una
-      // tiene su propia forma de parámetros que Postcognición no puede
-      // adivinar con esta firma genérica — se rechazan por ahora.
+      // habilidades sin caso propio arriba: no copiables.
       return null;
   }
 
@@ -594,5 +621,289 @@ export function usePostcognicion(
   };
 }
 
+// ---------- Brújula Mal Imantada: retrocede el turno sin tocar el tablero ----------
 
+/**
+ * Brújula Mal Imantada: el turno retrocede `stepsBack` jugadores en turnHistory
+ * (el siguiente en jugar es quien jugó hace `stepsBack` turnos), SIN tocar el
+ * tablero. El uso consume el turno de quien la usa (queda registrado en
+ * turnHistory como cualquier otro turno).
+ *
+ * Se bloquea (devuelve null) si:
+ * - la habilidad no está asignada/configurada, o la partida no está en curso;
+ * - stepsBack no es entero, es < 1, supera maxTurnosAtras o supera el historial;
+ * - algún jugador del tramo retrocedido está desconectado o eliminado;
+ * - el jugador de destino tiene Reloj Roto activo.
+ * No se chequea "deshace una victoria": solo se puede usar con la partida en curso.
+ */
+export function useBrujula(
+  game: GameState,
+  abilities: AbilitiesState,
+  playerId: number,
+  stepsBack: number,
+  disconnectedIds: Set<number> = new Set()
+): { game: GameState; abilities: AbilitiesState } | null {
+  if (!hasAbility(abilities, playerId, "brujula_mal_imantada")) return null;
+  const params = abilities.config.brujula_mal_imantada;
+  if (!params) return null;
+  if (game.status.kind !== "playing") return null;
 
+  const history = abilities.turnHistory;
+  if (!Number.isInteger(stepsBack) || stepsBack < 1) return null;
+  if (stepsBack > params.maxTurnosAtras || stepsBack > history.length) return null;
+
+  const segment = history.slice(history.length - stepsBack);
+  for (const id of segment) {
+    const p = game.players.find((pl: Player) => pl.id === id);
+    if (!p || p.eliminated || disconnectedIds.has(id)) return null;
+  }
+
+  const targetId = segment[0];
+  if (hasActiveRelojRoto(abilities, targetId)) return null;
+  const targetIndex = game.players.findIndex((p: Player) => p.id === targetId);
+  if (targetIndex === -1) return null;
+
+  return {
+    game: { ...game, currentPlayerIndex: targetIndex, turnStartedAt: Date.now() },
+    abilities: {
+      ...abilities,
+      turnHistory: [...history, playerId],
+      globalTurnIndex: abilities.globalTurnIndex + 1,
+    },
+  };
+}
+
+// ---------- Papa Caliente: tomarla, pasarla, explotar ----------
+
+/**
+ * Tomar la Papa Caliente: solo si nadie la tiene. Consume turno siempre.
+ * El turno de activación NO cuenta como turno sostenido (turnsHeld arranca en 0).
+ */
+export function useActivatePapaCaliente(
+  game: GameState,
+  abilities: AbilitiesState,
+  playerId: number,
+  disconnectedIds: Set<number> = new Set()
+): { game: GameState; abilities: AbilitiesState } | null {
+  if (!hasAbility(abilities, playerId, "papa_caliente")) return null;
+  if (!abilities.config.papa_caliente) return null;
+  if (abilities.papaCaliente.holderId !== null) return null;
+
+  const withPapa: AbilitiesState = {
+    ...abilities,
+    papaCaliente: { holderId: playerId, turnsHeld: 0, awaitingPlay: false, passedOnce: false },
+  };
+  return advanceTurnAfterAbility(game, withPapa, playerId, "papa_caliente", disconnectedIds);
+}
+
+/**
+ * Pasar la Papa Caliente a un objetivo válido: solo si eres el dueño actual
+ * (no hace falta tenerla en la mano: ver nota en el cuerpo de la función).
+ * Consume turno siempre. El nuevo dueño arranca con turnsHeld = 0 y, como ya
+ * se pasó al menos una vez, su límite pasa a ser turnosParaRepasar.
+ */
+export function usePassPapaCaliente(
+  game: GameState,
+  abilities: AbilitiesState,
+  playerId: number,
+  targetPlayerId: number,
+  disconnectedIds: Set<number> = new Set()
+): { game: GameState; abilities: AbilitiesState } | null {
+  // OJO: NO se exige tener la habilidad en la mano. Con Shuffle la mano se resortea
+  // cada turno; si pasarla dependiera de la mano, el dueño podría quedar sin forma
+  // de librarse de la papa y explotar sin poder evitarlo. Ser dueño basta para pasarla.
+  if (!abilities.config.papa_caliente) return null;
+  if (abilities.papaCaliente.holderId !== playerId) return null;
+  if (!isValidTarget(game, playerId, targetPlayerId, disconnectedIds)) return null;
+
+  const passed: AbilitiesState = {
+    ...abilities,
+    papaCaliente: { holderId: targetPlayerId, turnsHeld: 0, awaitingPlay: true, passedOnce: true },
+  };
+  return advanceTurnAfterAbility(game, passed, playerId, "papa_caliente", disconnectedIds);
+}
+
+/**
+ * Suma 1 a turnsHeld si `endedPlayerId` es el dueño de la papa. Se llama cuando
+ * el turno DEL DUEÑO termina sin que la haya pasado (no en cada turno de la partida).
+ */
+export function incrementPapaCalienteTurnsHeld(abilities: AbilitiesState, endedPlayerId: number): AbilitiesState {
+  const pc = abilities.papaCaliente;
+  if (pc.holderId === null || pc.holderId !== endedPlayerId) return abilities;
+  return { ...abilities, papaCaliente: { ...pc, turnsHeld: pc.turnsHeld + 1 } };
+}
+
+/** Explota la papa en su dueño: daño danoExplosion (applyDamage maneja eliminación/victoria) y queda libre. */
+function explodePapaCaliente(game: GameState, abilities: AbilitiesState): { game: GameState; abilities: AbilitiesState } {
+  const params = abilities.config.papa_caliente;
+  const holderId = abilities.papaCaliente.holderId;
+  if (!params || holderId === null) return { game, abilities };
+  return {
+    game: applyDamage(game, holderId, params.danoExplosion),
+    abilities: { ...abilities, papaCaliente: { holderId: null, turnsHeld: 0, awaitingPlay: false, passedOnce: false } },
+  };
+}
+
+/**
+ * Si el dueño sostuvo la papa más de turnosParaPasar turnos suyos (o
+ * turnosParaRepasar si la papa ya se pasó una vez), explota.
+ */
+export function checkPapaCalienteExplosion(
+  game: GameState,
+  abilities: AbilitiesState
+): { game: GameState; abilities: AbilitiesState; exploded: boolean } {
+  const params = abilities.config.papa_caliente;
+  const pc = abilities.papaCaliente;
+  if (!params || pc.holderId === null) return { game, abilities, exploded: false };
+
+  const limit = pc.passedOnce ? params.turnosParaRepasar : params.turnosParaPasar;
+  if (pc.turnsHeld <= limit) return { game, abilities, exploded: false };
+
+  return { ...explodePapaCaliente(game, abilities), exploded: true };
+}
+
+/**
+ * Ventana de segundosParaJugar: si la papa acaba de pasarse (awaitingPlay) y el
+ * dueño lleva más de segundosParaJugar segundos en SU turno sin actuar, explota.
+ * Se llama en vivo desde el servidor (tick de 1 s) y también al cerrar su turno.
+ */
+export function checkPapaCalienteSlow(
+  game: GameState,
+  abilities: AbilitiesState,
+  now: number
+): { game: GameState; abilities: AbilitiesState; exploded: boolean } {
+  const params = abilities.config.papa_caliente;
+  const pc = abilities.papaCaliente;
+  if (!params || pc.holderId === null || !pc.awaitingPlay) return { game, abilities, exploded: false };
+  if (game.status.kind !== "playing") return { game, abilities, exploded: false };
+  if (game.players[game.currentPlayerIndex]?.id !== pc.holderId) return { game, abilities, exploded: false };
+  if (params.segundosParaJugar <= 0) return { game, abilities, exploded: false };
+  if ((now - game.turnStartedAt) / 1000 <= params.segundosParaJugar) return { game, abilities, exploded: false };
+  return { ...explodePapaCaliente(game, abilities), exploded: true };
+}
+
+/**
+ * Punto único para cuando un turno de `endedPlayerId` terminó (jugada, timeout
+ * o habilidad que consumió turno) sin pasar la papa: suma turno, revisa la
+ * explosión por turnos y por lentitud, y cierra la ventana awaitingPlay.
+ * No hace nada si la partida ya no está en curso.
+ */
+export function settlePapaCalienteAfterTurn(
+  game: GameState,
+  abilities: AbilitiesState,
+  endedPlayerId: number,
+  turnStartedBefore?: number,
+  now: number = Date.now()
+): { game: GameState; abilities: AbilitiesState } {
+  if (game.status.kind !== "playing") return { game, abilities };
+  if (abilities.papaCaliente.holderId !== endedPlayerId) return { game, abilities };
+
+  // ¿Se pasó de tiempo en SU turno? (el tick en vivo normalmente ya lo habría explotado)
+  const params = abilities.config.papa_caliente;
+  const tooSlow =
+    !!params &&
+    abilities.papaCaliente.awaitingPlay &&
+    turnStartedBefore !== undefined &&
+    params.segundosParaJugar > 0 &&
+    (now - turnStartedBefore) / 1000 > params.segundosParaJugar;
+  if (tooSlow) return explodePapaCaliente(game, abilities);
+
+  const incremented = incrementPapaCalienteTurnsHeld(abilities, endedPlayerId);
+  const checked = checkPapaCalienteExplosion(game, incremented);
+  if (checked.exploded) return { game: checked.game, abilities: checked.abilities };
+  return {
+    game,
+    abilities: { ...incremented, papaCaliente: { ...incremented.papaCaliente, awaitingPlay: false } },
+  };
+}
+
+// ---------- Acelerador de Partículas: votación colectiva + daño por tardanza ----------
+
+/**
+ * Acelerador de Partículas (fase tardía, activación colectiva).
+ * - Solo se puede usar cuando globalTurnIndex >= turnoDeAparicion.
+ * - Cada jugador puede "votar" una sola vez (activatedByPlayerIds guarda ids distintos).
+ * - Cuando los votos llegan a jugadoresParaActivar (limitado al número de jugadores
+ *   no eliminados, para que nunca sea inalcanzable) el efecto queda vivo para toda
+ *   la partida: ver applyAceleradorLateness.
+ * - Votar consume turno siempre. Una vez vivo, no tiene sentido votar más (null).
+ */
+export function useAcelerador(
+  game: GameState,
+  abilities: AbilitiesState,
+  playerId: number,
+  disconnectedIds: Set<number> = new Set()
+): { game: GameState; abilities: AbilitiesState } | null {
+  if (!hasAbility(abilities, playerId, "acelerador_particulas")) return null;
+  const params = abilities.config.acelerador_particulas;
+  if (!params) return null;
+  if (game.status.kind !== "playing") return null;
+  if (abilities.globalTurnIndex < params.turnoDeAparicion) return null;
+  if (abilities.acelerador.effectLive) return null;
+  if (abilities.acelerador.activatedByPlayerIds.includes(playerId)) return null;
+
+  const votes = [...abilities.acelerador.activatedByPlayerIds, playerId];
+  const activePlayers = game.players.filter((p: Player) => !p.eliminated).length;
+  const needed = Math.max(1, Math.min(params.jugadoresParaActivar, activePlayers));
+  const withVote: AbilitiesState = {
+    ...abilities,
+    acelerador: { activatedByPlayerIds: votes, effectLive: votes.length >= needed },
+  };
+  return advanceTurnAfterAbility(game, withVote, playerId, "acelerador_particulas", disconnectedIds);
+}
+
+/**
+ * Daño por tardanza: con el Acelerador vivo, el jugador en turno recibe
+ * danoPorTardanza por cada segundosPorDano segundos completos de SU turno.
+ * El servidor lo cobra en vivo (tickAcelerador) y al cerrar el turno cobra solo
+ * los ticks que faltaban (aceleradorTick.applied evita cobrar dos veces).
+ * No hace nada si la partida ya no está en curso (p. ej. el turno terminó con una victoria).
+ */
+export function applyAceleradorLateness(
+  game: GameState,
+  abilities: AbilitiesState,
+  endedPlayerId: number,
+  turnStartedBefore: number,
+  now: number
+): GameState {
+  const params = abilities.config.acelerador_particulas;
+  if (!params || !abilities.acelerador.effectLive) return game;
+  if (game.status.kind !== "playing") return game;
+  if (params.segundosPorDano <= 0 || params.danoPorTardanza <= 0) return game;
+
+  const elapsedSeconds = Math.max(0, (now - turnStartedBefore) / 1000);
+  const ticks = Math.floor(elapsedSeconds / params.segundosPorDano);
+  const already = abilities.aceleradorTick.stamp === turnStartedBefore ? abilities.aceleradorTick.applied : 0;
+  const remaining = ticks - already;
+  if (remaining <= 0) return game;
+  return applyDamage(game, endedPlayerId, remaining * params.danoPorTardanza);
+}
+
+/**
+ * Cobro EN VIVO del Acelerador: llamado por el tick del servidor. Cobra al
+ * jugador en turno los ticks completos transcurridos que aún no se hayan cobrado.
+ */
+export function tickAcelerador(
+  game: GameState,
+  abilities: AbilitiesState,
+  now: number
+): { game: GameState; abilities: AbilitiesState } {
+  const params = abilities.config.acelerador_particulas;
+  if (!params || !abilities.acelerador.effectLive) return { game, abilities };
+  if (game.status.kind !== "playing") return { game, abilities };
+  if (params.segundosPorDano <= 0 || params.danoPorTardanza <= 0) return { game, abilities };
+
+  const current = game.players[game.currentPlayerIndex];
+  if (!current || current.eliminated) return { game, abilities };
+
+  const stamp = game.turnStartedAt;
+  const ticks = Math.floor(Math.max(0, now - stamp) / 1000 / params.segundosPorDano);
+  const already = abilities.aceleradorTick.stamp === stamp ? abilities.aceleradorTick.applied : 0;
+  const delta = ticks - already;
+  if (delta <= 0) return { game, abilities };
+
+  return {
+    game: applyDamage(game, current.id, delta * params.danoPorTardanza),
+    abilities: { ...abilities, aceleradorTick: { stamp, applied: ticks } },
+  };
+}

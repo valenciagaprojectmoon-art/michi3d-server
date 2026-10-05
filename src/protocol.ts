@@ -5,7 +5,19 @@
  */
 
 import type { GameState, TimerConfig, LifeConfig } from "./logic.js";
-import type { AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig } from "./abilities.js";
+import type { AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig, PapaCalienteState, AceleradorState } from "./abilities.js";
+
+/**
+ * Versión vigente de los Términos de Servicio y la Política de Privacidad
+ * (michi3d/public/terminos.html y privacidad.html). El cliente envía la versión
+ * que el jugador aceptó y el servidor la exige antes de crear/unirse a una sala.
+ * SI CAMBIAS LOS TEXTOS LEGALES de forma sustancial, cambia esta fecha: así todos
+ * tendrán que volver a aceptar.
+ */
+export const TERMS_VERSION = "2026-10-02";
+
+/** Idiomas que entiende el servidor para sus mensajes (el español es el idioma base). */
+export type Lang = "es" | "en";
 
 // ---------- Mensajes que el CLIENTE envía al servidor ----------
 
@@ -17,8 +29,11 @@ export type ClientMessage =
       lifeConfig?: LifeConfig;
       abilitiesConfig?: AbilitiesConfig;
       shuffleConfig?: ShuffleConfig | null; // null o ausente = sistema de Shuffle desactivado
+      acceptedTerms: string; // versión de ToS/Privacidad aceptada (debe ser TERMS_VERSION)
+      lang?: Lang; // idioma de los mensajes del servidor para este jugador (por defecto español)
     }
-  | { type: "join_room"; roomCode: string; playerName: string }
+  | { type: "join_room"; roomCode: string; playerName: string; acceptedTerms: string; lang?: Lang }
+  | { type: "set_language"; lang: Lang } // cambia el idioma de los mensajes del servidor durante la sesión
   | { type: "play_move"; index: number }
   | { type: "reset_game" }
   | { type: "leave_room" }
@@ -27,10 +42,15 @@ export type ClientMessage =
   | {
       type: "use_ability";
       ability: AbilityId;
-      targetPlayerId?: number; // usado por habilidades con objetivo de jugador (ej. Globo de Pintura)
+      targetPlayerId?: number; // usado por habilidades con objetivo de jugador (ej. Globo de Pintura, Postcognición)
       targetCellIndex?: number; // usado por habilidades con objetivo de casilla (ej. Malversión de Fondos)
+      secondaryTargetPlayerId?: number; // solo Postcognición: objetivo de jugador de la habilidad COPIADA, si la necesita
+      secondaryTargetCellIndex?: number; // solo Postcognición: objetivo de casilla de la habilidad COPIADA, si la necesita
+      stepsBack?: number; // solo Brújula Mal Imantada: cuántos jugadores retroceder en el historial de turnos
+      papaCalienteAction?: "activate" | "pass"; // solo Papa Caliente: tomarla (activate) o pasarla a targetPlayerId (pass)
     }
-  | { type: "send_chat"; text: string };
+  | { type: "send_chat"; text: string }
+  | { type: "report_message"; reportedPlayerId: number; messageSentAt: number; reason?: string }; // reporta un mensaje del chat a moderación
 
 // ---------- Mensajes que el SERVIDOR envía al cliente ----------
 
@@ -42,6 +62,7 @@ export type ServerMessage =
   | { type: "player_reconnected"; playerName: string }
   | { type: "effects_applied"; effects: ActiveEffect[] } // avisa efectos que acaban de aplicarse a TI (ej. pantalla desorientada)
   | { type: "chat_message"; message: ChatMessage }
+  | { type: "report_received" }
   | { type: "error"; message: string };
 
 /** Un mensaje de chat de sala completa: lo ve todo el mundo, sin importar el turno. */
@@ -68,5 +89,8 @@ export interface PublicRoomState {
   assignedAbilities: Record<number, AbilityId[]>; // sin Shuffle: asignación fija. Con Shuffle: la MANO actual (X) de cada jugador
   shuffle: ShuffleConfig | null; // null = sistema de Shuffle desactivado
   noConsumeUsesRemaining: number; // Z restantes en el turno actual (solo relevante si shuffle no es null)
+  papaCaliente: PapaCalienteState; // quién tiene la Papa Caliente y hace cuántos turnos (holderId null = nadie)
+  acelerador: AceleradorState; // votos del Acelerador de Partículas y si el efecto ya está vivo
+  globalTurnIndex: number; // turnos absolutos jugados (el Acelerador aparece al llegar a su turnoDeAparicion)
   chatHistory: ChatMessage[]; // últimos mensajes de chat de la sala, para que quien se une vea el contexto
 }
