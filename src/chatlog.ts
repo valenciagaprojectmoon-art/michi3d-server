@@ -17,7 +17,7 @@
 import pg from "pg";
 
 export interface ChatLogEntry {
-  roomId: string; // `${código}:${createdAt}` — único aunque un código de sala se reutilice
+  roomId: string; // `${código}:${createdAt}` - único aunque un código de sala se reutilice
   roomCode: string;
   playerId: number;
   playerName: string;

@@ -46,7 +46,7 @@ export interface RoomPlayer {
 }
 
 /**
- * Una sala une dos sistemas independientes: `game` (el núcleo del juego —
+ * Una sala une dos sistemas independientes: `game` (el núcleo del juego -
  * tablero, turnos, vida, definido en logic.ts) y `abilities` (la capa de
  * habilidades, definida en abilities.ts, que opera SOBRE game sin que
  * logic.ts necesite saber que las habilidades existen). Esto evita una
@@ -89,7 +89,7 @@ function disconnectedIds(room: Room): Set<number> {
  *    a antes de esta llamada, vuelve a sortear la mano del nuevo jugador
  *    actual. La comparación contra `previousPlayerId` es necesaria porque
  *    esta función se llama también tras usos sin-consumo de turno (donde
- *    currentPlayerIndex NO cambia) — sin esa comparación, la mano se
+ *    currentPlayerIndex NO cambia) - sin esa comparación, la mano se
  *    resortearía a mitad del propio turno del jugador cada vez que usa algo,
  *    contradiciendo "se sortea al EMPEZAR cada turno tuyo".
  *
@@ -603,7 +603,7 @@ export class RoomManager {
   /**
    * Chat de sala completa: cualquier jugador conectado puede mandar un mensaje
    * en cualquier momento, sin importar de quién es el turno (así se definió).
-   * No pasa por validateOwnTurn — solo valida que el texto no esté vacío tras
+   * No pasa por validateOwnTurn - solo valida que el texto no esté vacío tras
    * recortar espacios, y lo recorta a un largo razonable para evitar abuso.
    * El historial se limita a los últimos CHAT_HISTORY_LIMIT mensajes (se
    * descartan los más viejos), para no acumular memoria indefinidamente en

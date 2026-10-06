@@ -1,4 +1,4 @@
-# Michi 3D — Servidor
+# Michi 3D - Servidor
 
 Servidor WebSocket para el modo online de Michi 3D. Coordina salas, turnos y estado del juego para 2 a 4 jugadores.
 
@@ -25,28 +25,28 @@ npm start
 Ver `src/protocol.ts` para los tipos exactos de mensaje. Resumen:
 
 **Cliente → Servidor:**
-- `create_room` — crea una sala nueva, te vuelve jugador 0. Puede incluir `timerConfig` para configurar tiempo por turno y/o vidas.
-- `join_room` — te une a una sala existente por código.
-- `play_move` — coloca tu marca en una casilla (rechazado si no es tu turno).
-- `reset_game` — reinicia el tablero (misma sala, mismos jugadores, vidas restauradas).
-- `leave_room` — sales de la sala.
-- `end_game` — termina la partida manualmente. Solo el host de la sala puede usarlo; el servidor rechaza el mensaje si lo manda cualquier otro jugador.
-- `set_locked` — cierra o abre la sala a nuevos jugadores. Solo el host puede usarlo. Cerrar la sala nunca afecta a quienes ya están dentro; el host siempre puede reconectar incluso con la sala cerrada.
+- `create_room` - crea una sala nueva, te vuelve jugador 0. Puede incluir `timerConfig` para configurar tiempo por turno y/o vidas.
+- `join_room` - te une a una sala existente por código.
+- `play_move` - coloca tu marca en una casilla (rechazado si no es tu turno).
+- `reset_game` - reinicia el tablero (misma sala, mismos jugadores, vidas restauradas).
+- `leave_room` - sales de la sala.
+- `end_game` - termina la partida manualmente. Solo el host de la sala puede usarlo; el servidor rechaza el mensaje si lo manda cualquier otro jugador.
+- `set_locked` - cierra o abre la sala a nuevos jugadores. Solo el host puede usarlo. Cerrar la sala nunca afecta a quienes ya están dentro; el host siempre puede reconectar incluso con la sala cerrada.
 
 **Servidor → Cliente:**
-- `room_created` / `room_joined` — confirmación con tu `playerId` y el estado completo.
-- `state_update` — el tablero cambió (alguien jugó, se reinició, se acabó el tiempo de un turno, etc.), se manda a todos en la sala.
-- `player_disconnected` / `player_reconnected` — notificación informativa.
-- `error` — algo salió mal (sala llena, código inválido, jugada fuera de turno, acción de host sin ser host, etc.).
+- `room_created` / `room_joined` - confirmación con tu `playerId` y el estado completo.
+- `state_update` - el tablero cambió (alguien jugó, se reinició, se acabó el tiempo de un turno, etc.), se manda a todos en la sala.
+- `player_disconnected` / `player_reconnected` - notificación informativa.
+- `error` - algo salió mal (sala llena, código inválido, jugada fuera de turno, acción de host sin ser host, etc.).
 
 ## Partidas con tiempo y vidas
 
 `timerConfig` (definido en `logic.ts`) tiene tres formas:
-- `{ mode: "none" }` — sin límite, como el juego original.
-- `{ mode: "turn", secondsPerTurn, onTimeout }` — límite de tiempo por turno. `onTimeout` es `"skip_turn"` (se omite sin castigo) o `"random_move"` (se juega una casilla al azar).
-- `{ mode: "life", secondsPerTurn, onTimeout, startingLives }` — igual, pero además cada jugador tiene vidas; al vencer su tiempo pierde una, y al llegar a 0 queda eliminado (`Player.eliminated`). Si solo queda un jugador activo, gana automáticamente (`status.kind === "win_by_elimination"`).
+- `{ mode: "none" }` - sin límite, como el juego original.
+- `{ mode: "turn", secondsPerTurn, onTimeout }` - límite de tiempo por turno. `onTimeout` es `"skip_turn"` (se omite sin castigo) o `"random_move"` (se juega una casilla al azar).
+- `{ mode: "life", secondsPerTurn, onTimeout, startingLives }` - igual, pero además cada jugador tiene vidas; al vencer su tiempo pierde una, y al llegar a 0 queda eliminado (`Player.eliminated`). Si solo queda un jugador activo, gana automáticamente (`status.kind === "win_by_elimination"`).
 
-El servidor revisa todas las salas con un temporizador activo cada 1 segundo (`TIMER_CHECK_INTERVAL_MS` en `server.ts`), comparando `game.turnStartedAt` contra `timerConfig.secondsPerTurn`. Cuando se cumple, aplica `applyTurnTimeout` (en `logic.ts`) y lo notifica a la sala — sin que ningún cliente tenga que pedirlo.
+El servidor revisa todas las salas con un temporizador activo cada 1 segundo (`TIMER_CHECK_INTERVAL_MS` en `server.ts`), comparando `game.turnStartedAt` contra `timerConfig.secondsPerTurn`. Cuando se cumple, aplica `applyTurnTimeout` (en `logic.ts`) y lo notifica a la sala - sin que ningún cliente tenga que pedirlo.
 
 ## Bugfix: jugadores desconectados en la rotación de turnos
 
@@ -69,11 +69,11 @@ Variables de entorno (en Render → Environment):
 
 | Variable | Qué hace | Por defecto |
 |---|---|---|
-| `DATABASE_URL` | Cadena de conexión de Postgres (p. ej. el Postgres de Render). **Sin ella el registro es solo en memoria y se pierde al reiniciar.** | — |
-| `ADMIN_KEY` | Clave para consultar el registro. Sin ella, `/admin/...` no existe. Usa una larga y aleatoria. | — |
+| `DATABASE_URL` | Cadena de conexión de Postgres (p. ej. el Postgres de Render). **Sin ella el registro es solo en memoria y se pierde al reiniciar.** | - |
+| `ADMIN_KEY` | Clave para consultar el registro. Sin ella, `/admin/...` no existe. Usa una larga y aleatoria. | - |
 | `CHAT_RETENTION_DAYS` | Días que se conservan los mensajes | `30` |
 | `REPORT_RETENTION_DAYS` | Días que se conserva el chat de una sala con reportes (y los reportes) | `180` |
-| `PGSSLMODE` | `disable` para Postgres local sin TLS | — |
+| `PGSSLMODE` | `disable` para Postgres local sin TLS | - |
 
 Las tablas (`chat_messages`, `chat_reports`) se crean solas al arrancar. La purga corre al arrancar y cada hora.
 **Los plazos deben coincidir con `michi3d/public/privacidad.html`.**
@@ -91,8 +91,8 @@ curl -X DELETE -H "Authorization: Bearer $ADMIN_KEY" "https://TU-SERVIDOR/admin/
 
 ### Textos legales
 
-`michi3d/public/terminos.html` y `privacidad.html` son borradores con campos `[entre corchetes]` por completar
-(responsable, correo, país, jurisdicción, proveedores). Si cambias los textos de forma sustancial, cambia
+`michi3d/public/terminos.html`, `privacidad.html` (y sus versiones en inglés `terms.html`, `privacy.html`) ya incluyen el responsable (ValenciagaPM) y el correo de contacto.
+No indican país ni jurisdicción todavía. Si cambias los textos de forma sustancial, cambia
 `TERMS_VERSION` en `protocol.ts` (servidor y frontend) para que todos vuelvan a aceptar.
 
 ## Límites de peticiones (anti-bombardeo)
@@ -138,6 +138,6 @@ sube `TRUST_PROXY_HOPS` a `2` (o ajusta) y vuelve a probar.
 - **Páginas de error del servidor** (`src/errorpages.ts`): 400, 401, 403, 404, 405, 408, 413, 414, 429, 431 y 500, en HTML para navegadores y JSON para `curl`.
   Idioma por `?lang=es|en` o `Accept-Language`. Variable opcional `FRONTEND_URL` para mostrar el botón "Volver al juego".
 - **Páginas de error del frontend:** `public/404.html` (Vercel la usa sola para rutas inexistentes) y `public/error.html?code=403` para otros códigos.
-- **Textos legales en inglés:** `terms.html` y `privacy.html` (traducción de cortesía; prevalece la versión en español). Hay que completar sus `[campos entre corchetes]`.
+- **Textos legales en inglés:** `terms.html` y `privacy.html` (traducción de cortesía; prevalece la versión en español). 
 
 Pruebas: `npx tsx test/i18n.test.ts`, `node test/errors-lang.mjs` (con el servidor en el puerto 8097 y `RL_HTTP_BURST=12 RL_HTTP_REFILL_PER_SEC=0.01`).

@@ -18,7 +18,7 @@ const admin = (path, method = "GET", key = KEY) =>
 const a = await client();
 a.send({ type: "create_room", playerName: "Ana" });                       // sin acceptedTerms
 await sleep(150);
-ok(find(a, "error")?.message.includes("Términos"), "crear sala sin aceptar términos se rechaza");
+ok(find(a, "error")?.message.includes("términos"), "crear sala sin aceptar términos se rechaza");
 a.inbox.length = 0;
 a.send({ type: "create_room", playerName: "Ana", acceptedTerms: "1999-01-01" });
 await sleep(150);
@@ -67,7 +67,7 @@ ok(!!find(a, "report_received"), "el reportante recibe confirmación");
 a.inbox.length = 0;
 a.send({ type: "report_message", reportedPlayerId: msgB.message.playerId, messageSentAt: msgB.message.sentAt });
 await sleep(150);
-ok(find(a, "error")?.message.includes("Ya reportaste"), "no se puede reportar dos veces");
+ok(find(a, "error")?.message.includes("ya reportaste"), "no se puede reportar dos veces");
 a.inbox.length = 0;
 const own = a.inbox; 
 b.inbox.length = 0;

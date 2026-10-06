@@ -126,7 +126,7 @@ export type TimeoutAction = "skip_turn" | "random_move";
 
 /**
  * Configuración de tiempo de la partida, fijada por el creador al armar la sala.
- * "life" ya no trae su propio contador de vidas — resta directamente del sistema
+ * "life" ya no trae su propio contador de vidas - resta directamente del sistema
  * de vida global (LifeConfig/currentLife/maxLife abajo), que existe siempre.
  */
 export type TimerConfig =
@@ -136,7 +136,7 @@ export type TimerConfig =
 
 /**
  * Configuración de vida de la partida. A diferencia del timer, esto SIEMPRE está
- * presente — toda partida tiene vida configurada por el creador, independiente
+ * presente - toda partida tiene vida configurada por el creador, independiente
  * de si hay límite de tiempo o no. Habilidades como Chicharrón, Goyslop o Balanza
  * operan sobre este sistema, no sobre el timer.
  */
@@ -256,7 +256,7 @@ export function checkWinByElimination(players: Player[]): number | null {
 /**
  * Cambia el dueño de una casilla YA OCUPADA a `newOwnerId` (usado por la
  * habilidad Malversión de Fondos). A diferencia de playMove, no valida que la
- * casilla esté vacía — al contrario, se usa exactamente cuando SÍ está ocupada.
+ * casilla esté vacía - al contrario, se usa exactamente cuando SÍ está ocupada.
  * El llamador (rooms.ts / abilities.ts) es responsable de validar que la
  * casilla objetivo pertenezca a otro jugador, no a quien usa la habilidad.
  *
@@ -267,7 +267,7 @@ export function checkWinByElimination(players: Player[]): number | null {
  * `advanceTurn` (default true, para no romper el uso existente) controla si
  * el turno avanza al siguiente jugador tras el cambio. Se pasa `false` cuando
  * el llamador (típicamente useMalversionFondos con el sistema de Shuffle
- * activo) decide que este uso no debe consumir el turno — en ese caso el
+ * activo) decide que este uso no debe consumir el turno - en ese caso el
  * cambio de casilla y la revisión de victoria/empate ocurren igual, pero
  * currentPlayerIndex se queda como estaba.
  */
@@ -337,7 +337,7 @@ export function applyDamage(state: GameState, playerId: number, amount: number):
 /**
  * Cura a un jugador: suma a currentLife, sin superar su maxLife actual.
  * `amount` negativo o cero no hace nada. No revive a un jugador ya eliminado
- * (curar no deshace una eliminación ya ocurrida — es una decisión de diseño
+ * (curar no deshace una eliminación ya ocurrida - es una decisión de diseño
  * conservadora: la eliminación es un evento de la partida, no solo un número).
  */
 export function applyHeal(state: GameState, playerId: number, amount: number): GameState {
@@ -473,7 +473,7 @@ export function resetGame(state: GameState): GameState {
  * (vía applyDamage, que ya maneja eliminación y victoria por eliminación).
  *
  * No hace nada (devuelve el mismo estado) si timerConfig.mode === "none" o si la
- * partida ya no está en curso — el servidor es responsable de no llamar a esto
+ * partida ya no está en curso - el servidor es responsable de no llamar a esto
  * fuera de esos casos, pero se protege igual por robustez.
  */
 export function applyTurnTimeout(state: GameState, disconnectedIds: Set<number> = new Set()): GameState {

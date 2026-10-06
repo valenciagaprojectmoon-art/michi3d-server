@@ -205,7 +205,7 @@ const httpServer = http.createServer(async (req, res) => {
 httpServer.on("clientError", (err: NodeJS.ErrnoException, socket) => {
   if (!socket.writable || socket.destroyed) return;
   const status = err.code === "HPE_HEADER_OVERFLOW" ? 431 : err.code === "ERR_HTTP_REQUEST_TIMEOUT" ? 408 : 400;
-  const body = `${status} — ${errorText(status, "es").title} / ${errorText(status, "en").title}\n`;
+  const body = `${status}: ${errorText(status, "es").title} / ${errorText(status, "en").title}\n`;
   socket.end(
     `HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? "Error"}\r\nContent-Type: text/plain; charset=utf-8\r\n` +
       `Content-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`
@@ -275,7 +275,7 @@ function broadcastToRoom(room: Room, msg: ServerMessage) {
 }
 
 /**
- * Envía efectos consumidos SOLO al jugador afectado (no a toda la sala —
+ * Envía efectos consumidos SOLO al jugador afectado (no a toda la sala -
  * "tu pantalla se desorienta" es información personal del objetivo, no algo
  * que le interese a los demás como broadcast). Agrupa por targetPlayerId
  * porque consumeEffectsForTurn puede devolver varios efectos a la vez.
@@ -728,7 +728,7 @@ setInterval(() => {
  * (timerConfig.secondsPerTurn). Si se pasó, aplica el timeout y notifica a la sala.
  *
  * La resolución de 1 segundo (TIMER_CHECK_INTERVAL_MS) significa que el timeout
- * puede aplicarse hasta ~1s tarde respecto al límite exacto — aceptable para
+ * puede aplicarse hasta ~1s tarde respecto al límite exacto - aceptable para
  * un juego de mesa por turnos, no para algo que necesite precisión de milisegundos.
  */
 setInterval(() => {

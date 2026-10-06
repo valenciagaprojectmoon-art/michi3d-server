@@ -60,7 +60,7 @@ const COPY: Record<number, Record<Lang, Copy>> = {
   },
 };
 
-const BACK: Record<Lang, string> = { es: "Volver al juego", en: "Back to the game" };
+const BACK: Record<Lang, string> = { es: "volver al juego", en: "back to the game" };
 
 export function isErrorStatus(status: number): boolean {
   return status in COPY;
@@ -78,8 +78,10 @@ export function pickLang(acceptLanguage: string | string[] | undefined, queryLan
   return "es";
 }
 
+/** Estilo del producto: los textos de error se muestran en minúsculas. */
 export function errorText(status: number, lang: Lang): Copy {
-  return (COPY[status] ?? COPY[500])[lang];
+  const c = (COPY[status] ?? COPY[500])[lang];
+  return { title: c.title.toLowerCase(), text: c.text.toLowerCase() };
 }
 
 function escapeHtml(s: string): string {
@@ -99,7 +101,7 @@ export function renderErrorPage(status: number, lang: Lang, frontendUrl?: string
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>${status} — ${escapeHtml(title)} · Michi 3D</title>
+<title>${status} | ${escapeHtml(title)} | michi 3d</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #14161e; color: #d7dbe6; font: 16px/1.6 system-ui, -apple-system, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
@@ -119,8 +121,8 @@ export function renderErrorPage(status: number, lang: Lang, frontendUrl?: string
   <h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(text)}</p>
   ${back}
-  <p class="lang"><a href="?lang=${other}">${other === "es" ? "Español" : "English"}</a></p>
-  <p class="brand">Michi 3D</p>
+  <p class="lang"><a href="?lang=${other}">${other === "es" ? "español" : "english"}</a></p>
+  <p class="brand">michi 3d</p>
 </main>
 </body>
 </html>`;

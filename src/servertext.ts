@@ -58,18 +58,27 @@ export const SERVER_EN: Record<string, string> = {
   "No se pudo registrar el reporte. Inténtalo de nuevo.": "The report could not be saved. Please try again.",
 };
 
-/** Mensajes con datos variables (p. ej. el código de sala). */
-const PATTERNS: { re: RegExp; en: (m: RegExpMatchArray) => string }[] = [
-  { re: /^No existe ninguna sala con el código "(.*)"\.$/s, en: (m) => `There is no room with the code "${m[1]}".` },
+/**
+ * Mensajes con datos variables (p. ej. el código de sala). Solo se pasa a minúsculas la plantilla,
+ * nunca el dato que escribió el jugador.
+ */
+const PATTERNS: { re: RegExp; es: (m: RegExpMatchArray) => string; en: (m: RegExpMatchArray) => string }[] = [
+  {
+    re: /^No existe ninguna sala con el código "(.*)"\.$/s,
+    es: (m) => `no existe ninguna sala con el código "${m[1]}".`,
+    en: (m) => `there is no room with the code "${m[1]}".`,
+  },
 ];
 
+/** Estilo del producto: los mensajes se muestran en minúsculas (ver styleUi en el frontend). */
 export function translateServer(lang: Lang, spanish: string): string {
-  if (lang === "es") return spanish;
-  const exact = SERVER_EN[spanish];
-  if (exact !== undefined) return exact;
+  if (lang === "en") {
+    const exact = SERVER_EN[spanish];
+    if (exact !== undefined) return exact.toLowerCase();
+  }
   for (const p of PATTERNS) {
     const m = spanish.match(p.re);
-    if (m) return p.en(m);
+    if (m) return lang === "en" ? p.en(m) : p.es(m);
   }
-  return spanish; // sin traducción: mejor en español que vacío
+  return spanish.toLowerCase(); // español, o sin traducción: mejor en español que vacío
 }

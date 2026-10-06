@@ -25,13 +25,13 @@ for (const f of serverFiles) {
 }
 const userFacing = [...messages].filter((m) => /[a-záéíóúñ]+ [a-záéíóúñ]+/i.test(m));
 ok(userFacing.length >= 40, `servidor: se detectaron ${userFacing.length} mensajes de usuario en el código`);
-const missingServer = userFacing.filter((m) => translateServer("en", m) === m);
+const missingServer = userFacing.filter((m) => translateServer("en", m) === m.toLowerCase());
 ok(missingServer.length === 0, "servidor: todos los mensajes tienen traducción al inglés" + (missingServer.length ? "\n      SIN TRADUCIR: " + missingServer.join("\n      SIN TRADUCIR: ") : ""));
 const orphanServer = Object.keys(SERVER_EN).filter((k) => !userFacing.includes(k));
 ok(orphanServer.length === 0, "servidor: no hay traducciones huérfanas (sin mensaje en el código)" + (orphanServer.length ? "\n      HUÉRFANAS: " + orphanServer.join(" | ") : ""));
-ok(translateServer("es", "No es tu turno.") === "No es tu turno.", "servidor: en español se devuelve el original");
-ok(translateServer("en", 'No existe ninguna sala con el código "AB12".') === 'There is no room with the code "AB12".', "servidor: mensaje con código de sala se traduce");
-ok(translateServer("en", "Texto desconocido que no existe") === "Texto desconocido que no existe", "servidor: sin traducción cae al español");
+ok(translateServer("es", "No es tu turno.") === "no es tu turno.", "servidor: en español se muestra en minúsculas");
+ok(translateServer("en", 'No existe ninguna sala con el código "AB12".') === 'there is no room with the code "AB12".', "servidor: mensaje con código de sala se traduce");
+ok(translateServer("en", "Texto desconocido que no existe") === "texto desconocido que no existe", "servidor: sin traducción cae al español");
 
 // ---------- Páginas de error ----------
 for (const status of [400, 401, 403, 404, 405, 408, 413, 414, 429, 431, 500]) {
@@ -61,7 +61,7 @@ if (fs.existsSync(frontSrc)) {
     for (const m of src.matchAll(/"(🥔 (?:Tomar|Pasar) Papa Caliente)"/g)) keys.add(m[1]);
   }
   // Textos que se traducen con t(...) sobre una expresión: se declaran aquí explícitamente.
-  for (const k of ["Tienes {n} habilidad activada — la mano incluirá todas, no {hand}.", "Tienes {n} habilidades activadas — la mano incluirá todas, no {hand}."]) keys.add(k);
+  for (const k of ["Tienes {n} habilidad activada, la mano incluirá todas, no {hand}.", "Tienes {n} habilidades activadas, la mano incluirá todas, no {hand}."]) keys.add(k);
   ok(keys.size >= 90, `frontend: se detectaron ${keys.size} textos traducibles`);
   const missing = [...keys].filter((k) => !(k in EN));
   ok(missing.length === 0, "frontend: todos los textos tienen traducción al inglés" + (missing.length ? "\n      SIN TRADUCIR: " + missing.join("\n      SIN TRADUCIR: ") : ""));
