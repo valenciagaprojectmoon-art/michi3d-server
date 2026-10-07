@@ -60,6 +60,7 @@ export interface Room {
   createdAt: number;
   emptyAt: number | null; // timestamp desde el que la sala quedó sin nadie conectado, o null si hay alguien
   locked: boolean; // true = nadie nuevo puede unirse (excepto el host, que siempre puede reentrar)
+  rematchVotes: number[]; // jugadores que ya pidieron revancha (se vacía al reiniciar la partida)
   chatHistory: ChatMessage[]; // últimos mensajes de la sala, para que un jugador que se une vea el contexto
 }
 
@@ -186,6 +187,7 @@ export class RoomManager {
       emptyAt: null,
       locked: false,
       chatHistory: [],
+      rematchVotes: [],
     };
 
     this.rooms.set(code, room);
@@ -329,10 +331,29 @@ export class RoomManager {
     return { room, consumedEffects };
   }
 
+  /**
+   * Revancha: cada jugador conectado pulsa "revancha" una vez la partida terminó. Cuando han votado todos
+   * los que siguen conectados, la partida se reinicia sola (misma configuración).
+   */
+  voteRematch(code: string, playerId: number): { room: Room; restarted: boolean } | { error: string } {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) return { error: "La sala ya no existe." };
+    if (room.game.status.kind === "playing") return { error: "Todavía no terminó la partida." };
+    if (!room.rematchVotes.includes(playerId)) room.rematchVotes = [...room.rematchVotes, playerId];
+    const connected = room.players.filter((p) => p.connected);
+    if (connected.length > 0 && connected.every((p) => room.rematchVotes.includes(p.id))) {
+      const result = this.resetGame(code);
+      if ("error" in result) return result;
+      return { room: result.room, restarted: true };
+    }
+    return { room, restarted: false };
+  }
+
   resetGame(code: string): { room: Room } | { error: string } {
     const room = this.rooms.get(code.toUpperCase());
     if (!room) return { error: "La sala ya no existe." };
     room.game = resetGame(room.game);
+    room.rematchVotes = [];
     room.abilities = createInitialAbilitiesState(room.abilities.config, room.abilities.shuffle);
 
     if (room.abilities.shuffle) {

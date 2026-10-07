@@ -34,6 +34,7 @@ export type ClientMessage =
       boardConfig?: BoardConfig; // dimensión del cubo y de la línea (por defecto 3 y 3; el servidor la valida)
     }
   | { type: "join_room"; roomCode: string; playerName: string; acceptedTerms: string; lang?: Lang }
+  | { type: "rematch" } // pide revancha; cuando todos los conectados la piden, se reinicia la partida
   | { type: "set_language"; lang: Lang } // cambia el idioma de los mensajes del servidor durante la sesión
   | { type: "play_move"; index: number }
   | { type: "reset_game" }
@@ -92,6 +93,7 @@ export interface PublicRoomState {
   noConsumeUsesRemaining: number; // Z restantes en el turno actual (solo relevante si shuffle no es null)
   papaCaliente: PapaCalienteState; // quién tiene la Papa Caliente y hace cuántos turnos (holderId null = nadie)
   acelerador: AceleradorState; // votos del Acelerador de Partículas y si el efecto ya está vivo
+  rematchVotes: number[]; // ids de los jugadores que ya pidieron revancha
   globalTurnIndex: number; // turnos absolutos jugados (el Acelerador aparece al llegar a su turnoDeAparicion)
   chatHistory: ChatMessage[]; // últimos mensajes de chat de la sala, para que quien se une vea el contexto
 }

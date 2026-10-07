@@ -23,12 +23,12 @@ const COPY: Record<number, Record<Lang, Copy>> = {
     en: { title: "Unauthorized", text: "You need a valid key to see this." },
   },
   403: {
-    es: { title: "Acceso prohibido", text: "No tienes permiso para acceder a este recurso." },
-    en: { title: "Forbidden", text: "You don't have permission to access this resource." },
+    es: { title: "Acceso prohibido", text: "No tienes permiso para entrar aquí." },
+    en: { title: "Forbidden", text: "You don't have permission to get in here." },
   },
   404: {
-    es: { title: "Página no encontrada", text: "Esta dirección no existe. Puede que el enlace esté mal escrito o que la página ya no esté." },
-    en: { title: "Page not found", text: "This address doesn't exist. The link may be mistyped or the page may be gone." },
+    es: { title: "Página no encontrada", text: "Esta página no existe. A lo mejor el enlace está mal escrito." },
+    en: { title: "Page not found", text: "This page doesn't exist. The link might be mistyped." },
   },
   405: {
     es: { title: "Método no permitido", text: "Esta dirección no admite ese tipo de petición." },
@@ -47,16 +47,16 @@ const COPY: Record<number, Record<Lang, Copy>> = {
     en: { title: "URI too long", text: "The address you opened is too long." },
   },
   429: {
-    es: { title: "Demasiadas peticiones", text: "Has hecho demasiadas peticiones en poco tiempo. Espera un momento y vuelve a intentarlo." },
-    en: { title: "Too many requests", text: "You've made too many requests in a short time. Wait a moment and try again." },
+    es: { title: "Demasiadas peticiones", text: "Has hecho demasiadas peticiones seguidas. Espera un poco y vuelve a probar." },
+    en: { title: "Too many requests", text: "You've made too many requests in a row. Give it a moment and try again." },
   },
   431: {
     es: { title: "Cabeceras demasiado grandes", text: "La petición incluye demasiados datos de cabecera." },
     en: { title: "Request header fields too large", text: "The request carries too much header data." },
   },
   500: {
-    es: { title: "Error interno", text: "Algo falló en el servidor. Inténtalo de nuevo en un momento." },
-    en: { title: "Internal error", text: "Something went wrong on the server. Please try again in a moment." },
+    es: { title: "Error interno", text: "Algo se rompió en el servidor. Prueba otra vez en un rato." },
+    en: { title: "Internal error", text: "Something broke on the server. Try again in a bit." },
   },
 };
 

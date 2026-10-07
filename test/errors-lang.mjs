@@ -63,11 +63,11 @@ const lastError = (c) => [...c.inbox].reverse().find((m) => m.type === "error")?
 { const en = await client("10.2.0.1");
   en.send({ type: "create_room", playerName: "A", lang: "en" });          // sin términos → error en inglés
   await sleep(150);
-  ok(lastError(en) === "you must accept the terms of service and the privacy policy to play online.", "WS: error de términos en inglés si lang=en");
+  ok(lastError(en) === "you need to accept the terms and the privacy policy to play online.", "WS: error de términos en inglés si lang=en");
   const es = await client("10.2.0.2");
   es.send({ type: "create_room", playerName: "A", lang: "es" });
   await sleep(150);
-  ok(lastError(es).startsWith("debes aceptar los términos"), "WS: error en español si lang=es");
+  ok(lastError(es).startsWith("tienes que aceptar los términos"), "WS: error en español si lang=es");
   const def = await client("10.2.0.3");
   def.send({ type: "join_room", roomCode: "ZZZZ", playerName: "A", acceptedTerms: "2026-10-02" });
   await sleep(150);

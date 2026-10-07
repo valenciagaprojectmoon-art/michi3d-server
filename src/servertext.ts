@@ -30,18 +30,19 @@ export const SERVER_EN: Record<string, string> = {
   "No puedes pasar la Papa Caliente a ese jugador.": "You can't pass the Hot Potato to that player.",
   "No puedes usar el Acelerador de Partículas ahora mismo.": "You can't use the Particle Accelerator right now.",
   "No se pudo generar un código de sala único.": "Could not generate a unique room code.",
+  "Todavía no terminó la partida.": "The game hasn't finished yet.",
   "No se encontró tu jugador en la sala.": "Your player was not found in the room.",
   "El mensaje no puede estar vacío.": "The message can't be empty.",
   "Solo el creador de la sala puede terminar la partida.": "Only the room creator can end the game.",
   "Solo el creador de la sala puede cambiar esto.": "Only the room creator can change this.",
   // server.ts
-  "Debes aceptar los Términos de Servicio y la Política de Privacidad para jugar online.":
-    "You must accept the Terms of Service and the Privacy Policy to play online.",
-  "Vas demasiado rápido. Espera un momento.": "You're going too fast. Wait a moment.",
+  "Tienes que aceptar los términos y la política de privacidad para jugar online.":
+    "You need to accept the terms and the privacy policy to play online.",
+  "Vas muy rápido, espera un poco.": "You're going too fast, give it a second.",
   "Mensaje mal formado.": "Malformed message.",
-  "El servidor está lleno ahora mismo. Inténtalo en unos minutos.": "The server is full right now. Try again in a few minutes.",
-  "Estás creando salas demasiado rápido. Espera un momento.": "You're creating rooms too fast. Wait a moment.",
-  "Demasiados intentos con códigos inválidos. Espera un momento.": "Too many attempts with invalid codes. Wait a moment.",
+  "El servidor está lleno ahora mismo, prueba en unos minutos.": "The server is full right now, try again in a few minutes.",
+  "Estás creando salas muy rápido, espera un poco.": "You're creating rooms too quickly, give it a moment.",
+  "Demasiados códigos que no existen, espera un poco.": "Too many codes that don't exist, give it a moment.",
   "No estás en ninguna sala.": "You're not in any room.",
   "Globo de Pintura necesita un objetivo.": "Paint Balloon needs a target.",
   "Malversión de Fondos necesita una casilla objetivo.": "Embezzlement needs a target cell.",
@@ -50,12 +51,12 @@ export const SERVER_EN: Record<string, string> = {
   "Pasar la Papa Caliente necesita un objetivo.": "Passing the Hot Potato needs a target.",
   "Papa Caliente: indica si quieres tomarla o pasarla.": "Hot Potato: say whether you want to take it or pass it.",
   "Esa habilidad todavía no está disponible.": "That ability is not available yet.",
-  "Estás escribiendo demasiado rápido. Espera un momento.": "You're typing too fast. Wait a moment.",
-  "Estás reportando demasiado rápido. Espera un momento.": "You're reporting too fast. Wait a moment.",
+  "Más despacio, que escribes muy rápido.": "Slow down, you're typing too fast.",
+  "Más despacio con los reportes, espera un poco.": "Easy with the reports, give it a moment.",
   "No puedes reportar tus propios mensajes.": "You can't report your own messages.",
   "Ese mensaje ya no está disponible para reportar.": "That message is no longer available to report.",
   "Ya reportaste ese mensaje.": "You already reported that message.",
-  "No se pudo registrar el reporte. Inténtalo de nuevo.": "The report could not be saved. Please try again.",
+  "No se pudo guardar el reporte, prueba otra vez.": "The report couldn't be saved, try again.",
 };
 
 /**

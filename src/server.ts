@@ -63,7 +63,7 @@ function logError(what: string, err: unknown) {
 function checkTerms(accepted: string | undefined): string | null {
   return accepted === TERMS_VERSION
     ? null
-    : "Debes aceptar los Términos de Servicio y la Política de Privacidad para jugar online.";
+    : "Tienes que aceptar los términos y la política de privacidad para jugar online.";
 }
 
 async function runPurge() {
@@ -252,6 +252,7 @@ function toPublicState(room: Room): PublicRoomState {
     papaCaliente: room.abilities.papaCaliente,
     acelerador: room.abilities.acelerador,
     globalTurnIndex: room.abilities.globalTurnIndex,
+    rematchVotes: room.rematchVotes,
     chatHistory: room.chatHistory,
   };
 }
@@ -342,7 +343,7 @@ wss.on("connection", (ws, req) => {
     if (verdict === "limited") {
       if (nowMs - lastLimitedNoticeAt >= LIMITED_NOTICE_EVERY_MS) {
         lastLimitedNoticeAt = nowMs;
-        send(ws, { type: "error", message: "Vas demasiado rápido. Espera un momento." });
+        send(ws, { type: "error", message: "Vas muy rápido, espera un poco." });
       }
       return;
     }
@@ -367,11 +368,11 @@ wss.on("connection", (ws, req) => {
           return;
         }
         if (roomManager.roomCount() >= limits.maxRooms) {
-          send(ws, { type: "error", message: "El servidor está lleno ahora mismo. Inténtalo en unos minutos." });
+          send(ws, { type: "error", message: "El servidor está lleno ahora mismo, prueba en unos minutos." });
           return;
         }
         if (!createRoomLimiter.tryTake(ip, nowMs)) {
-          send(ws, { type: "error", message: "Estás creando salas demasiado rápido. Espera un momento." });
+          send(ws, { type: "error", message: "Estás creando salas muy rápido, espera un poco." });
           return;
         }
         const { room, player } = roomManager.createRoom(
@@ -402,7 +403,7 @@ wss.on("connection", (ws, req) => {
         }
         // Anti fuerza bruta de códigos de sala: solo los intentos FALLIDOS consumen cupo.
         if (!failedJoinLimiter.canTake(ip, nowMs)) {
-          send(ws, { type: "error", message: "Demasiados intentos con códigos inválidos. Espera un momento." });
+          send(ws, { type: "error", message: "Demasiados códigos que no existen, espera un poco." });
           return;
         }
         const result = roomManager.joinRoom(msg.roomCode, msg.playerName, socketId);
@@ -587,7 +588,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
         if (!chatBucket.tryTake(nowMs)) {
-          send(ws, { type: "error", message: "Estás escribiendo demasiado rápido. Espera un momento." });
+          send(ws, { type: "error", message: "Más despacio, que escribes muy rápido." });
           return;
         }
         const room = roomManager.getRoom(meta.roomCode);
@@ -618,6 +619,23 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      case "rematch": {
+        if (!meta.roomCode) return;
+        const room = roomManager.getRoom(meta.roomCode);
+        const player = room?.players.find((p) => p.socketId === socketId);
+        if (!room || !player) {
+          send(ws, { type: "error", message: "No se encontró tu jugador en la sala." });
+          return;
+        }
+        const result = roomManager.voteRematch(meta.roomCode, player.id);
+        if ("error" in result) {
+          send(ws, { type: "error", message: result.error });
+          return;
+        }
+        broadcastState(result.room);
+        break;
+      }
+
       case "set_language": {
         const lang = asLang(msg.lang);
         if (lang) meta.lang = lang;
@@ -630,7 +648,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
         if (!reportLimiter.tryTake(ip, nowMs)) {
-          send(ws, { type: "error", message: "Estás reportando demasiado rápido. Espera un momento." });
+          send(ws, { type: "error", message: "Más despacio con los reportes, espera un poco." });
           return;
         }
         const room = roomManager.getRoom(meta.roomCode);
@@ -676,7 +694,7 @@ wss.on("connection", (ws, req) => {
           .catch((err) => {
             logError("guardar reporte", err);
             reportedKeys.delete(key);
-            send(ws, { type: "error", message: "No se pudo registrar el reporte. Inténtalo de nuevo." });
+            send(ws, { type: "error", message: "No se pudo guardar el reporte, prueba otra vez." });
           });
         break;
       }

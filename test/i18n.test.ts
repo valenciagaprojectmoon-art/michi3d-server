@@ -59,6 +59,8 @@ if (fs.existsSync(frontSrc)) {
     const lab = src.match(/const ABILITY_LABELS[^{]*\{([\s\S]*?)\};/);
     if (lab) for (const m of lab[1].matchAll(/: "((?:[^"\\]|\\.)*)"/g)) keys.add(unescape(m[1]));
     for (const m of src.matchAll(/"(🥔 (?:Tomar|Pasar) Papa Caliente)"/g)) keys.add(m[1]);
+    const info = src.match(/const ABILITY_INFO[^{]*\{([\s\S]*?)\n\};/);
+    if (info) for (const m of info[1].matchAll(/: "((?:[^"\\]|\\.)*)"/g)) keys.add(unescape(m[1]));
   }
   // Textos que se traducen con t(...) sobre una expresión: se declaran aquí explícitamente.
   for (const k of ["Tienes {n} habilidad activada, la mano incluirá todas, no {hand}.", "Tienes {n} habilidades activadas, la mano incluirá todas, no {hand}."]) keys.add(k);

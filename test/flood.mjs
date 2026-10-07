@@ -46,7 +46,7 @@ const errors = (c) => c.inbox.filter((m) => m.type === "error").map((m) => m.mes
   for (let i = 0; i < 4; i++) c.send({ type: "send_chat", text: "m" + i });
   await sleep(300);
   const delivered = c.inbox.filter((m) => m.type === "chat_message").length;
-  ok(delivered === 2 && errors(c).some((e) => e.includes("escribiendo demasiado rápido")), "chat: 2 mensajes pasan y el resto se frena con aviso");
+  ok(delivered === 2 && errors(c).some((e) => e.includes("escribes muy rápido")), "chat: 2 mensajes pasan y el resto se frena con aviso");
   c.ws.close();
 }
 // 4) Crear salas demasiado rápido (ráfaga 2)
@@ -59,14 +59,14 @@ const errors = (c) => c.inbox.filter((m) => m.type === "error").map((m) => m.mes
 { const c = await client("10.0.0.6");
   for (let i = 0; i < 6; i++) { c.send({ type: "join_room", roomCode: "ZZ" + String.fromCharCode(65 + i) + "Q", playerName: "Z", acceptedTerms: T }); await sleep(120); }
   const errs = errors(c);
-  ok(errs.filter((e) => e.includes("inválidos")).length >= 2, "fuerza bruta de códigos: tras 3 fallos se bloquean los intentos");
+  ok(errs.filter((e) => e.includes("no existen")).length >= 2, "fuerza bruta de códigos: tras 3 fallos se bloquean los intentos");
   c.ws.close();
 }
 // 6) Inundación -> cierre y baneo temporal (ráfaga 5, 10 faltas, ban 3 s)
 { const c = await client("10.0.0.7");
   for (let i = 0; i < 60; i++) c.send("basura-" + i);
   await sleep(400);
-  const notices = errors(c).filter((e) => e.includes("demasiado rápido")).length;
+  const notices = errors(c).filter((e) => e.includes("vas muy rápido")).length;
   ok(c.closed?.code === 1008 && c.closed.reason.includes("flood"), "inundación: la conexión se cierra con 1008");
   ok(notices <= 2, `inundación: los avisos no se amplifican (${notices} aviso/s para 60 mensajes)`);
   const retry = await client("10.0.0.7");
