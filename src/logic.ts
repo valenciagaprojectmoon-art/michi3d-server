@@ -23,27 +23,56 @@ export interface Player {
   eliminated: boolean; // true si llegó a 0 vidas en modo Vida (nunca vuelve a jugar en esta partida)
 }
 
-/** Tablero: 27 casillas indexadas linealmente. */
+/** Tablero: size³ casillas indexadas linealmente (27 por defecto). */
 export type Board = Mark[];
 
-/** Una línea ganadora es una lista de 3 índices lineales del tablero. */
+/** Una línea ganadora es una lista de `lineLength` índices lineales del tablero (3 por defecto). */
 export type WinLine = number[];
 
-export const SIZE = 3;
-export const CELL_COUNT = SIZE * SIZE * SIZE; // 27
+export const SIZE = 3; // dimensión por defecto del cubo
+export const CELL_COUNT = SIZE * SIZE * SIZE; // 27 (cubo por defecto)
+
+// ---------- Configuración del tablero (por partida) ----------
+
+/** Límites razonables: de 2 (jugable) a 6 (216 casillas, aún cómodo de ver y de calcular). */
+export const MIN_BOARD_SIZE = 2;
+export const MAX_BOARD_SIZE = 6;
+export const MIN_LINE_LENGTH = 2;
+
+export interface BoardConfig {
+  size: number; // dimensión del cubo: casillas por lado (size³ casillas en total)
+  lineLength: number; // dimensión de línea: casillas en raya necesarias para ganar (nunca mayor que size)
+}
+
+export const DEFAULT_BOARD_CONFIG: BoardConfig = { size: 3, lineLength: 3 };
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Valida y corrige una configuración (el servidor NUNCA se fía de lo que manda el cliente):
+ * enteros, cubo entre 2 y 6, línea entre 2 y el tamaño del cubo. Lo que falte usa el valor por defecto (3).
+ */
+export function normalizeBoardConfig(input?: Partial<BoardConfig> | null): BoardConfig {
+  const size = clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+  const lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, MIN_LINE_LENGTH, size);
+  return { size, lineLength };
+}
 
 // ---------- Conversión de coordenadas ----------
 
 /** Convierte coordenada 3D a índice lineal 0..26. */
-export function coordToIndex(c: Coord): number {
-  return c.x + c.y * SIZE + c.z * SIZE * SIZE;
+export function coordToIndex(c: Coord, size: number = SIZE): number {
+  return c.x + c.y * size + c.z * size * size;
 }
 
 /** Convierte índice lineal a coordenada 3D. */
-export function indexToCoord(i: number): Coord {
-  const x = i % SIZE;
-  const y = Math.floor(i / SIZE) % SIZE;
-  const z = Math.floor(i / (SIZE * SIZE));
+export function indexToCoord(i: number, size: number = SIZE): Coord {
+  const x = i % size;
+  const y = Math.floor(i / size) % size;
+  const z = Math.floor(i / (size * size));
   return { x, y, z };
 }
 
@@ -66,7 +95,7 @@ export function indexToCoord(i: number): Coord {
  * Se generan combinaciones con dirección canonicalizada (evitando duplicar
  * la misma línea en sentido inverso) usando un Set de líneas normalizadas.
  */
-export function computeWinLines(): WinLine[] {
+export function computeWinLines(size: number = SIZE, lineLength: number = SIZE): WinLine[] {
   const directions: Coord[] = [];
   for (let dx = -1; dx <= 1; dx++) {
     for (let dy = -1; dy <= 1; dy++) {
@@ -80,19 +109,24 @@ export function computeWinLines(): WinLine[] {
   const seen = new Set<string>();
   const lines: WinLine[] = [];
 
-  for (let x = 0; x < SIZE; x++) {
-    for (let y = 0; y < SIZE; y++) {
-      for (let z = 0; z < SIZE; z++) {
+  for (let x = 0; x < size; x++) {
+    for (let y = 0; y < size; y++) {
+      for (let z = 0; z < size; z++) {
         for (const d of directions) {
-          const p0: Coord = { x, y, z };
-          const p1: Coord = { x: x + d.x, y: y + d.y, z: z + d.z };
-          const p2: Coord = { x: x + 2 * d.x, y: y + 2 * d.y, z: z + 2 * d.z };
+          const idxs: number[] = [];
+          let inside = true;
+          for (let step = 0; step < lineLength; step++) {
+            const p: Coord = { x: x + step * d.x, y: y + step * d.y, z: z + step * d.z };
+            if (!inBounds(p, size)) {
+              inside = false;
+              break;
+            }
+            idxs.push(coordToIndex(p, size));
+          }
+          if (!inside) continue;
 
-          if (!inBounds(p1) || !inBounds(p2)) continue;
-
-          const idxs = [coordToIndex(p0), coordToIndex(p1), coordToIndex(p2)];
+          // La misma línea se encuentra desde sus dos extremos: se deduplica por el conjunto de índices.
           const key = [...idxs].sort((a, b) => a - b).join("-");
-
           if (!seen.has(key)) {
             seen.add(key);
             lines.push(idxs);
@@ -105,12 +139,26 @@ export function computeWinLines(): WinLine[] {
   return lines;
 }
 
-function inBounds(c: Coord): boolean {
-  return c.x >= 0 && c.x < SIZE && c.y >= 0 && c.y < SIZE && c.z >= 0 && c.z < SIZE;
+function inBounds(c: Coord, size: number): boolean {
+  return c.x >= 0 && c.x < size && c.y >= 0 && c.y < size && c.z >= 0 && c.z < size;
 }
 
-/** Líneas ganadoras precalculadas una sola vez al cargar el módulo. */
-export const WIN_LINES: WinLine[] = computeWinLines();
+// Caché: calcular las líneas de un cubo grande no es gratis y checkWinner se llama en cada jugada.
+const winLinesCache = new Map<string, WinLine[]>();
+
+/** Líneas ganadoras de una configuración, calculadas una sola vez. */
+export function getWinLines(config: BoardConfig = DEFAULT_BOARD_CONFIG): WinLine[] {
+  const key = `${config.size}:${config.lineLength}`;
+  let lines = winLinesCache.get(key);
+  if (!lines) {
+    lines = computeWinLines(config.size, config.lineLength);
+    winLinesCache.set(key, lines);
+  }
+  return lines;
+}
+
+/** Líneas del cubo por defecto (3x3x3, 3 en raya): 49. */
+export const WIN_LINES: WinLine[] = getWinLines(DEFAULT_BOARD_CONFIG);
 
 // ---------- Estado y reglas del juego ----------
 
@@ -151,13 +199,14 @@ export interface GameState {
   status: GameStatus;
   timerConfig: TimerConfig;
   lifeConfig: LifeConfig;
+  boardConfig: BoardConfig; // dimensión del cubo y de la línea ganadora de ESTA partida
   currentLife: Record<number, number>; // vida actual por playerId
   maxLife: Record<number, number>; // vida máxima por playerId (Goyslop puede reducirla)
   turnStartedAt: number; // timestamp (ms) de cuándo empezó el turno actual, para calcular tiempo restante
 }
 
-export function createEmptyBoard(): Board {
-  return new Array(CELL_COUNT).fill(null);
+export function createEmptyBoard(size: number = SIZE): Board {
+  return new Array(size * size * size).fill(null);
 }
 
 export const DEFAULT_PLAYERS: Player[] = [
@@ -170,8 +219,10 @@ export const DEFAULT_LIFE_CONFIG: LifeConfig = { startingLife: 3 };
 export function createInitialState(
   players: Player[] = DEFAULT_PLAYERS,
   timerConfig: TimerConfig = { mode: "none" },
-  lifeConfig: LifeConfig = DEFAULT_LIFE_CONFIG
+  lifeConfig: LifeConfig = DEFAULT_LIFE_CONFIG,
+  boardConfigInput: Partial<BoardConfig> | null = DEFAULT_BOARD_CONFIG
 ): GameState {
+  const boardConfig = normalizeBoardConfig(boardConfigInput);
   const currentLife: Record<number, number> = {};
   const maxLife: Record<number, number> = {};
   for (const p of players) {
@@ -179,12 +230,13 @@ export function createInitialState(
     maxLife[p.id] = lifeConfig.startingLife;
   }
   return {
-    board: createEmptyBoard(),
+    board: createEmptyBoard(boardConfig.size),
     players,
     currentPlayerIndex: 0,
     status: { kind: "playing" },
     timerConfig,
     lifeConfig,
+    boardConfig,
     currentLife,
     maxLife,
     turnStartedAt: Date.now(),
@@ -198,19 +250,20 @@ export function createInitialState(
  *
  * Es función pura y reutilizable: no muta el tablero, solo lo lee.
  */
-export function checkWinner(board: Board): { playerId: number; line: WinLine } | null {
-  for (const line of WIN_LINES) {
-    const [a, b, c] = line;
-    const markA = board[a];
-    if (markA === null) continue;
-    if (markA === board[b] && markA === board[c]) {
-      return { playerId: markA, line };
+export function checkWinner(
+  board: Board,
+  config: BoardConfig = DEFAULT_BOARD_CONFIG
+): { playerId: number; line: WinLine } | null {
+  for (const line of getWinLines(config)) {
+    const first = board[line[0]];
+    if (first === null) continue;
+    if (line.every((i) => board[i] === first)) {
+      return { playerId: first, line };
     }
   }
   return null;
 }
 
-/** El tablero está lleno si no queda ninguna casilla vacía. */
 export function isBoardFull(board: Board): boolean {
   return board.every((cell) => cell !== null);
 }
@@ -279,13 +332,13 @@ export function overwriteCell(
   advanceTurn: boolean = true
 ): GameState {
   if (state.status.kind !== "playing") return state;
-  if (index < 0 || index >= CELL_COUNT) return state;
+  if (index < 0 || index >= state.board.length) return state;
   if (state.board[index] === null) return state; // esta función es solo para casillas YA ocupadas
 
   const board = [...state.board];
   board[index] = newOwnerId;
 
-  const win = checkWinner(board);
+  const win = checkWinner(board, state.boardConfig);
   let status: GameStatus;
   if (win) {
     status = { kind: "win", playerId: win.playerId, line: win.line };
@@ -423,13 +476,13 @@ export function applyBalance(state: GameState): GameState {
  */
 export function playMove(state: GameState, index: number, disconnectedIds: Set<number> = new Set()): GameState {
   if (state.status.kind !== "playing") return state;
-  if (index < 0 || index >= CELL_COUNT) return state;
+  if (index < 0 || index >= state.board.length) return state;
   if (state.board[index] !== null) return state;
 
   const board = [...state.board];
   board[index] = state.players[state.currentPlayerIndex].id;
 
-  const win = checkWinner(board);
+  const win = checkWinner(board, state.boardConfig);
   let status: GameStatus;
   if (win) {
     status = { kind: "win", playerId: win.playerId, line: win.line };
@@ -462,7 +515,7 @@ export function playMove(state: GameState, index: number, disconnectedIds: Set<n
  */
 export function resetGame(state: GameState): GameState {
   const revivedPlayers = state.players.map((p) => ({ ...p, eliminated: false }));
-  return createInitialState(revivedPlayers, state.timerConfig, state.lifeConfig);
+  return createInitialState(revivedPlayers, state.timerConfig, state.lifeConfig, state.boardConfig);
 }
 
 /**

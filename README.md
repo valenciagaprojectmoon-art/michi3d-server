@@ -141,3 +141,9 @@ sube `TRUST_PROXY_HOPS` a `2` (o ajusta) y vuelve a probar.
 - **Textos legales en inglés:** `terms.html` y `privacy.html` (traducción de cortesía; prevalece la versión en español). 
 
 Pruebas: `npx tsx test/i18n.test.ts`, `node test/errors-lang.mjs` (con el servidor en el puerto 8097 y `RL_HTTP_BURST=12 RL_HTTP_REFILL_PER_SEC=0.01`).
+
+## Dimensión del cubo y de la línea (por partida)
+
+Al crear una sala se eligen dos valores (por defecto 3 y 3): **dimensión del cubo** (casillas por lado, de 2 a 6) y **dimensión de línea** (casillas en raya para ganar, de 2 hasta el tamaño del cubo).
+El servidor valida siempre lo que manda el cliente (`normalizeBoardConfig` en `logic.ts`): redondea, limita al rango y baja la línea si no cabe.
+Un cubo de 6 tiene 216 casillas; el máximo es 6 para que siga siendo cómodo de ver y de calcular. Pruebas: `npx tsx test/board.test.ts`.

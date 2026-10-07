@@ -4,7 +4,7 @@
  * tanto al servidor como al frontend para que ambos lados tipen igual.
  */
 
-import type { GameState, TimerConfig, LifeConfig } from "./logic.js";
+import type { GameState, TimerConfig, LifeConfig, BoardConfig } from "./logic.js";
 import type { AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig, PapaCalienteState, AceleradorState } from "./abilities.js";
 
 /**
@@ -31,6 +31,7 @@ export type ClientMessage =
       shuffleConfig?: ShuffleConfig | null; // null o ausente = sistema de Shuffle desactivado
       acceptedTerms: string; // versión de ToS/Privacidad aceptada (debe ser TERMS_VERSION)
       lang?: Lang; // idioma de los mensajes del servidor para este jugador (por defecto español)
+      boardConfig?: BoardConfig; // dimensión del cubo y de la línea (por defecto 3 y 3; el servidor la valida)
     }
   | { type: "join_room"; roomCode: string; playerName: string; acceptedTerms: string; lang?: Lang }
   | { type: "set_language"; lang: Lang } // cambia el idioma de los mensajes del servidor durante la sesión

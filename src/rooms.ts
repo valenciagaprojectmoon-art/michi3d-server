@@ -4,7 +4,7 @@
  */
 
 import { createInitialState, playMove, resetGame, applyTurnTimeout, nextEligiblePlayerIndex } from "./logic.js";
-import type { GameState, Player, TimerConfig, LifeConfig } from "./logic.js";
+import type { GameState, Player, TimerConfig, LifeConfig, BoardConfig } from "./logic.js";
 import {
   createInitialAbilitiesState,
   useChicharron as abilityChicharron,
@@ -156,7 +156,8 @@ export class RoomManager {
     timerConfig: TimerConfig = { mode: "none" },
     lifeConfig: LifeConfig = { startingLife: 3 },
     abilitiesConfig: AbilitiesConfig = {},
-    shuffleConfig: ShuffleConfig | null = null
+    shuffleConfig: ShuffleConfig | null = null,
+    boardConfig: Partial<BoardConfig> | null = null
   ): { room: Room; player: RoomPlayer } {
     const code = this.generateRoomCode();
     const hostPlayer: RoomPlayer = {
@@ -178,7 +179,7 @@ export class RoomManager {
 
     const room: Room = {
       code,
-      game: createInitialState(gamePlayers, timerConfig, lifeConfig),
+      game: createInitialState(gamePlayers, timerConfig, lifeConfig, boardConfig),
       abilities,
       players: [hostPlayer],
       createdAt: Date.now(),

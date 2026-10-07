@@ -380,7 +380,8 @@ wss.on("connection", (ws, req) => {
           msg.timerConfig,
           msg.lifeConfig,
           msg.abilitiesConfig,
-          msg.shuffleConfig
+          msg.shuffleConfig,
+          msg.boardConfig
         );
         meta.roomCode = room.code;
         send(ws, {
