@@ -233,7 +233,7 @@ function send(ws: WebSocket, msg: ServerMessage) {
 }
 
 function asLang(value: unknown): Lang | null {
-  return value === "es" || value === "en" ? value : null;
+  return value === "es" || value === "en" || value === "de" ? value : null;
 }
 
 function toPublicState(room: Room): PublicRoomState {

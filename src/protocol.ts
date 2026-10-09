@@ -17,7 +17,7 @@ import type { AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig, PapaCalie
 export const TERMS_VERSION = "2026-10-02";
 
 /** Idiomas que entiende el servidor para sus mensajes (el español es el idioma base). */
-export type Lang = "es" | "en";
+export type Lang = "es" | "en" | "de";
 
 // ---------- Mensajes que el CLIENTE envía al servidor ----------
 

@@ -59,27 +59,76 @@ export const SERVER_EN: Record<string, string> = {
   "No se pudo guardar el reporte, prueba otra vez.": "The report couldn't be saved, try again.",
 };
 
+/** Deutsch, immer im Du-Stil. Mismo criterio: el texto en español es la clave. */
+export const SERVER_DE: Record<string, string> = {
+  "El creador de la sala ha deshabilitado nuevos ingresos.": "Der Raumersteller hat neue Beitritte deaktiviert.",
+  "La sala ya está llena (máximo 4 jugadores).": "Der Raum ist schon voll (maximal 4 Spieler).",
+  "La sala ya no existe.": "Den Raum gibt es nicht mehr.",
+  "La partida ya terminó.": "Die Partie ist schon vorbei.",
+  "No es tu turno.": "Du bist nicht dran.",
+  "Estás eliminado y ya no puedes jugar.": "Du bist ausgeschieden und kannst nicht mehr spielen.",
+  "No puedes usar Chicharrón ahora mismo.": "Du kannst Chicharrón gerade nicht einsetzen.",
+  "No puedes usar Goyslop ahora mismo.": "Du kannst Goyslop gerade nicht einsetzen.",
+  "No puedes usar Balanza ahora mismo.": "Du kannst die Waage gerade nicht einsetzen.",
+  "No puedes usar Globo de Pintura sobre ese objetivo.": "Du kannst den Farbballon nicht auf dieses Ziel einsetzen.",
+  "No puedes usar Malversión de Fondos sobre esa casilla.": "Du kannst Veruntreuung nicht auf dieses Feld einsetzen.",
+  "No puedes usar Postcognición sobre ese objetivo.": "Du kannst Postkognition nicht auf dieses Ziel einsetzen.",
+  "No puedes usar Reloj Roto ahora mismo.": "Du kannst die Kaputte Uhr gerade nicht einsetzen.",
+  "No puedes usar Brújula Mal Imantada con ese número de turnos.": "Du kannst den Verstimmten Kompass nicht mit dieser Anzahl Züge einsetzen.",
+  "No puedes tomar la Papa Caliente ahora mismo.": "Du kannst die Heiße Kartoffel gerade nicht nehmen.",
+  "No puedes pasar la Papa Caliente a ese jugador.": "Du kannst die Heiße Kartoffel nicht an diesen Spieler weitergeben.",
+  "No puedes usar el Acelerador de Partículas ahora mismo.": "Du kannst den Teilchenbeschleuniger gerade nicht einsetzen.",
+  "No se pudo generar un código de sala único.": "Es konnte kein eindeutiger Raumcode erzeugt werden.",
+  "Todavía no terminó la partida.": "Die Partie ist noch nicht vorbei.",
+  "No se encontró tu jugador en la sala.": "Dein Spieler wurde im Raum nicht gefunden.",
+  "El mensaje no puede estar vacío.": "Die Nachricht darf nicht leer sein.",
+  "Solo el creador de la sala puede terminar la partida.": "Nur der Raumersteller kann die Partie beenden.",
+  "Solo el creador de la sala puede cambiar esto.": "Nur der Raumersteller kann das ändern.",
+  "Tienes que aceptar los términos y la política de privacidad para jugar online.": "Du musst die Nutzungsbedingungen und die Datenschutzerklärung akzeptieren, um online zu spielen.",
+  "Vas muy rápido, espera un poco.": "Du bist zu schnell, warte kurz.",
+  "Mensaje mal formado.": "Fehlerhafte Nachricht.",
+  "El servidor está lleno ahora mismo, prueba en unos minutos.": "Der Server ist gerade voll, versuch es in ein paar Minuten nochmal.",
+  "Estás creando salas muy rápido, espera un poco.": "Du erstellst Räume zu schnell, warte kurz.",
+  "Demasiados códigos que no existen, espera un poco.": "Zu viele Codes, die es nicht gibt, warte kurz.",
+  "No estás en ninguna sala.": "Du bist in keinem Raum.",
+  "Globo de Pintura necesita un objetivo.": "Der Farbballon braucht ein Ziel.",
+  "Malversión de Fondos necesita una casilla objetivo.": "Veruntreuung braucht ein Zielfeld.",
+  "Postcognición necesita un objetivo.": "Postkognition braucht ein Ziel.",
+  "Brújula Mal Imantada necesita un número de turnos.": "Der Verstimmte Kompass braucht eine Anzahl Züge.",
+  "Pasar la Papa Caliente necesita un objetivo.": "Zum Weitergeben der Heißen Kartoffel brauchst du ein Ziel.",
+  "Papa Caliente: indica si quieres tomarla o pasarla.": "Heiße Kartoffel: sag, ob du sie nehmen oder weitergeben willst.",
+  "Esa habilidad todavía no está disponible.": "Diese Fähigkeit ist noch nicht verfügbar.",
+  "Más despacio, que escribes muy rápido.": "Langsamer, du schreibst zu schnell.",
+  "Más despacio con los reportes, espera un poco.": "Langsamer mit den Meldungen, warte kurz.",
+  "No puedes reportar tus propios mensajes.": "Du kannst deine eigenen Nachrichten nicht melden.",
+  "Ese mensaje ya no está disponible para reportar.": "Diese Nachricht kann nicht mehr gemeldet werden.",
+  "Ya reportaste ese mensaje.": "Du hast diese Nachricht schon gemeldet.",
+  "No se pudo guardar el reporte, prueba otra vez.": "Die Meldung konnte nicht gespeichert werden, versuch es nochmal.",
+};
+
 /**
  * Mensajes con datos variables (p. ej. el código de sala). Solo se pasa a minúsculas la plantilla,
  * nunca el dato que escribió el jugador.
  */
-const PATTERNS: { re: RegExp; es: (m: RegExpMatchArray) => string; en: (m: RegExpMatchArray) => string }[] = [
+const PATTERNS: { re: RegExp; es: (m: RegExpMatchArray) => string; en: (m: RegExpMatchArray) => string; de: (m: RegExpMatchArray) => string }[] = [
   {
     re: /^No existe ninguna sala con el código "(.*)"\.$/s,
     es: (m) => `no existe ninguna sala con el código "${m[1]}".`,
     en: (m) => `there is no room with the code "${m[1]}".`,
+    de: (m) => `es gibt keinen raum mit dem code "${m[1]}".`,
   },
 ];
 
 /** Estilo del producto: los mensajes se muestran en minúsculas (ver styleUi en el frontend). */
 export function translateServer(lang: Lang, spanish: string): string {
-  if (lang === "en") {
-    const exact = SERVER_EN[spanish];
+  const dict = lang === "en" ? SERVER_EN : lang === "de" ? SERVER_DE : null;
+  if (dict) {
+    const exact = dict[spanish];
     if (exact !== undefined) return exact.toLowerCase();
   }
   for (const p of PATTERNS) {
     const m = spanish.match(p.re);
-    if (m) return lang === "en" ? p.en(m) : p.es(m);
+    if (m) return p[lang](m);
   }
   return spanish.toLowerCase(); // español, o sin traducción: mejor en español que vacío
 }
