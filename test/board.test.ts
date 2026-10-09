@@ -58,6 +58,16 @@ ok(nc({ size: NaN as any, lineLength: "x" as any }).size === 3 && nc({ size: "5"
   const b = createEmptyBoard(n); diag.forEach((i) => (b[i] = 1));
   ok(checkWinner(b, { size: 5, lineLength: 5 })?.playerId === 1, "cubo 5: la diagonal espacial gana");
 }
+// última jugada
+{ let g = createInitialState();
+  ok(g.lastMoveIndex === null, "última jugada: null al empezar");
+  g = playMove(g, 13);
+  ok(g.lastMoveIndex === 13, "última jugada: la casilla recién puesta");
+  g = playMove(g, 4);
+  ok(g.lastMoveIndex === 4, "última jugada: se actualiza con cada jugada");
+  ok(playMove(g, 4).lastMoveIndex === 4, "última jugada: una jugada inválida (casilla ocupada) no la cambia");
+  ok(resetGame(g).lastMoveIndex === null, "última jugada: se borra al reiniciar");
+}
 // sala: la configuración viaja al estado y se valida en el servidor
 { const m = new RoomManager();
   const { room } = m.createRoom("A", "s0", { mode: "none" }, { startingLife: 3 }, {}, null, { size: 99, lineLength: 99 });

@@ -194,6 +194,7 @@ export interface LifeConfig {
 
 export interface GameState {
   board: Board;
+  lastMoveIndex: number | null; // última casilla puesta o cambiada (para resaltarla en pantalla); null al empezar
   players: Player[];
   currentPlayerIndex: number;
   status: GameStatus;
@@ -231,6 +232,7 @@ export function createInitialState(
   }
   return {
     board: createEmptyBoard(boardConfig.size),
+    lastMoveIndex: null,
     players,
     currentPlayerIndex: 0,
     status: { kind: "playing" },
@@ -356,6 +358,7 @@ export function overwriteCell(
 
   return {
     ...state,
+    lastMoveIndex: index,
     board,
     status,
     currentPlayerIndex: nextIndex,
@@ -502,6 +505,7 @@ export function playMove(state: GameState, index: number, disconnectedIds: Set<n
 
   return {
     ...state,
+    lastMoveIndex: index,
     board,
     status,
     currentPlayerIndex: nextIndex,
