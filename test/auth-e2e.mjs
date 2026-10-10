@@ -120,10 +120,12 @@ try {
   ok((await admin(`/admin/users/00000000-0000-0000-0000-000000000000/ban`, "POST")).status === 404, "banear una cuenta que no existe: 404");
 
   // CORS
-  const pre = await fetch(BASE + "/auth/me", { method: "OPTIONS", headers: { Origin: FRONT } });
-  ok(pre.status === 204 && pre.headers.get("access-control-allow-origin") === FRONT, "CORS: el origen del juego está permitido");
-  const evil = await fetch(BASE + "/auth/providers", { headers: { Origin: "https://evil.example" } });
-  ok(!evil.headers.get("access-control-allow-origin"), "CORS: otros orígenes no reciben permiso");
+  const pre = await fetch(BASE + "/auth/me", { method: "OPTIONS", headers: { Origin: "https://cualquier-juego.vercel.app", "Access-Control-Request-Headers": "authorization" } });
+  ok(pre.status === 204 && pre.headers.get("access-control-allow-origin") === "*" && pre.headers.get("access-control-allow-headers")?.includes("Authorization"), "CORS: /auth/me y /auth/providers se pueden consultar desde el juego aunque FRONTEND_URL no coincida");
+  const open = await fetch(BASE + "/auth/providers", { headers: { Origin: "https://evil.example" } });
+  ok(open.headers.get("access-control-allow-origin") === "*" && !("email" in (await open.json())), "CORS: lo que se expone a cualquier origen es solo la lista pública de proveedores");
+  const evilAdmin = await fetch(BASE + "/admin/users", { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+  ok(!evilAdmin.headers.get("access-control-allow-origin"), "CORS: el panel de administración NO se abre a otros orígenes");
   const preAdmin = await fetch(BASE + "/admin/users", { method: "OPTIONS", headers: { Origin: FRONT } });
   ok(preAdmin.status === 204 && preAdmin.headers.get("access-control-allow-headers")?.includes("Authorization"), "CORS: el panel de cuentas puede llamar con la clave");
   room.ws.close();

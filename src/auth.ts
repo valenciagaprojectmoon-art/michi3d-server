@@ -241,7 +241,15 @@ export async function handleAuthHttp(req: http.IncomingMessage, res: http.Server
   if (!path.startsWith("/auth/")) return false;
   const { cfg, users } = deps;
   const now = deps.now ? deps.now() : Date.now();
-  applyCors(req, res, cfg);
+  if (path === "/auth/providers" || path === "/auth/me") {
+    // Estas dos consultas no llevan nada secreto (la sesión va en una cabecera, no en cookies), así que se aceptan desde
+    // cualquier origen. Así el lobby funciona aunque FRONTEND_URL no esté bien puesta: antes el navegador las bloqueaba.
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  } else {
+    applyCors(req, res, cfg);
+  }
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
