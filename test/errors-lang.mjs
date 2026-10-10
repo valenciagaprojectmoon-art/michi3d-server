@@ -72,11 +72,11 @@ const lastError = (c) => [...c.inbox].reverse().find((m) => m.type === "error")?
   await sleep(150);
   ok(lastError(es).startsWith("tienes que aceptar los términos"), "WS: error en español si lang=es");
   const def = await client("10.2.0.3");
-  def.send({ type: "join_room", roomCode: "ZZZZ", playerName: "A", acceptedTerms: "2026-10-02" });
+  def.send({ type: "join_room", roomCode: "ZZZZ", playerName: "A", acceptedTerms: "2026-10-09" });
   await sleep(150);
   ok(lastError(def) === 'no existe ninguna sala con el código "ZZZZ".', "WS: sin lang el servidor responde en español (por defecto)");
   const en2 = await client("10.2.0.4");
-  en2.send({ type: "join_room", roomCode: "ZZZZ", playerName: "A", acceptedTerms: "2026-10-02", lang: "en" });
+  en2.send({ type: "join_room", roomCode: "ZZZZ", playerName: "A", acceptedTerms: "2026-10-09", lang: "en" });
   await sleep(150);
   ok(lastError(en2) === 'there is no room with the code "ZZZZ".', "WS: error con código de sala traducido al inglés");
   const de = await client("10.2.0.6");

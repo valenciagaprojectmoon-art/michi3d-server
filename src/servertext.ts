@@ -11,6 +11,12 @@
 import type { Lang } from "./protocol.js";
 
 export const SERVER_EN: Record<string, string> = {
+  "Tienes que iniciar sesión para jugar online.": "You need to sign in to play online.",
+  "Tu sesión caducó, vuelve a iniciar sesión.": "Your session expired, sign in again.",
+  "Tu cuenta está pendiente de aprobación.": "Your account is waiting for approval.",
+  "Tu cuenta está baneada.": "Your account is banned.",
+  "No se pudo comprobar tu sesión, prueba otra vez.": "Your session couldn't be checked, try again.",
+  "Ese nombre ya lo usa otra cuenta en la sala.": "That name is already used by another account in the room.",
   // rooms.ts
   "El creador de la sala ha deshabilitado nuevos ingresos.": "The room creator has disabled new players joining.",
   "La sala ya está llena (máximo 4 jugadores).": "The room is already full (maximum 4 players).",
@@ -61,6 +67,12 @@ export const SERVER_EN: Record<string, string> = {
 
 /** Deutsch, immer im Du-Stil. Mismo criterio: el texto en español es la clave. */
 export const SERVER_DE: Record<string, string> = {
+  "Tienes que iniciar sesión para jugar online.": "Du musst dich anmelden, um online zu spielen.",
+  "Tu sesión caducó, vuelve a iniciar sesión.": "Deine Sitzung ist abgelaufen, melde dich neu an.",
+  "Tu cuenta está pendiente de aprobación.": "Dein Konto wartet noch auf Freigabe.",
+  "Tu cuenta está baneada.": "Dein Konto ist gesperrt.",
+  "No se pudo comprobar tu sesión, prueba otra vez.": "Deine Sitzung konnte nicht geprüft werden, versuch es nochmal.",
+  "Ese nombre ya lo usa otra cuenta en la sala.": "Diesen Namen benutzt schon ein anderes Konto im Raum.",
   "El creador de la sala ha deshabilitado nuevos ingresos.": "Der Raumersteller hat neue Beitritte deaktiviert.",
   "La sala ya está llena (máximo 4 jugadores).": "Der Raum ist schon voll (maximal 4 Spieler).",
   "La sala ya no existe.": "Den Raum gibt es nicht mehr.",

@@ -24,6 +24,7 @@ export interface ChatLogEntry {
   text: string;
   sentAt: number; // ms
   termsVersion: string;
+  userId?: string | null; // cuenta de quien escribió (null si jugó sin cuenta)
 }
 
 export interface ChatReportEntry {
@@ -36,6 +37,8 @@ export interface ChatReportEntry {
   messageSentAt: number; // ms
   messageText: string;
   reason: string;
+  reporterUserId?: string | null;
+  reportedUserId?: string | null;
 }
 
 export interface StoredMessage extends ChatLogEntry {
@@ -117,22 +120,25 @@ class PostgresChatLogStore implements ChatLogStore {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS chat_reports_created_idx ON chat_reports (created_at);
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE chat_reports ADD COLUMN IF NOT EXISTS reporter_user_id TEXT;
+      ALTER TABLE chat_reports ADD COLUMN IF NOT EXISTS reported_user_id TEXT;
     `);
   }
 
   async append(e: ChatLogEntry): Promise<void> {
     await this.pool.query(
-      `INSERT INTO chat_messages (room_id, room_code, player_id, player_name, text, sent_at, terms_version)
-       VALUES ($1,$2,$3,$4,$5,to_timestamp($6/1000.0),$7)`,
-      [e.roomId, e.roomCode, e.playerId, e.playerName, e.text, e.sentAt, e.termsVersion]
+      `INSERT INTO chat_messages (room_id, room_code, player_id, player_name, text, sent_at, terms_version, user_id)
+       VALUES ($1,$2,$3,$4,$5,to_timestamp($6/1000.0),$7,$8)`,
+      [e.roomId, e.roomCode, e.playerId, e.playerName, e.text, e.sentAt, e.termsVersion, e.userId ?? null]
     );
   }
 
   async report(r: ChatReportEntry): Promise<{ held: number }> {
     await this.pool.query(
-      `INSERT INTO chat_reports (room_id, room_code, reporter_id, reporter_name, reported_player_id, reported_player_name, message_sent_at, message_text, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,to_timestamp($7/1000.0),$8,$9)`,
-      [r.roomId, r.roomCode, r.reporterId, r.reporterName, r.reportedPlayerId, r.reportedPlayerName, r.messageSentAt, r.messageText, r.reason]
+      `INSERT INTO chat_reports (room_id, room_code, reporter_id, reporter_name, reported_player_id, reported_player_name, message_sent_at, message_text, reason, reporter_user_id, reported_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,to_timestamp($7/1000.0),$8,$9,$10,$11)`,
+      [r.roomId, r.roomCode, r.reporterId, r.reporterName, r.reportedPlayerId, r.reportedPlayerName, r.messageSentAt, r.messageText, r.reason, r.reporterUserId ?? null, r.reportedUserId ?? null]
     );
     const res = await this.pool.query(`UPDATE chat_messages SET held = TRUE WHERE room_id = $1`, [r.roomId]);
     return { held: res.rowCount ?? 0 };
@@ -168,7 +174,7 @@ class PostgresChatLogStore implements ChatLogStore {
 
   async listRoom(roomId: string, limit: number): Promise<StoredMessage[]> {
     const res = await this.pool.query(
-      `SELECT id, room_id, room_code, player_id, player_name, text, terms_version, held,
+      `SELECT id, room_id, room_code, player_id, player_name, text, terms_version, held, user_id,
               (EXTRACT(EPOCH FROM sent_at)*1000)::float8 AS sent_at
        FROM chat_messages WHERE room_id = $1 ORDER BY sent_at ASC, id ASC LIMIT $2`,
       [roomId, limit]
@@ -183,12 +189,13 @@ class PostgresChatLogStore implements ChatLogStore {
       sentAt: Math.round(r.sent_at),
       termsVersion: r.terms_version,
       held: r.held,
+      userId: r.user_id ?? null,
     }));
   }
 
   async listReports(limit: number): Promise<StoredReport[]> {
     const res = await this.pool.query(
-      `SELECT id, room_id, room_code, reporter_id, reporter_name, reported_player_id, reported_player_name, message_text, reason,
+      `SELECT id, room_id, room_code, reporter_id, reporter_name, reported_player_id, reported_player_name, message_text, reason, reporter_user_id, reported_user_id,
               (EXTRACT(EPOCH FROM message_sent_at)*1000)::float8 AS message_sent_at,
               (EXTRACT(EPOCH FROM created_at)*1000)::float8 AS created_at
        FROM chat_reports ORDER BY created_at DESC LIMIT $1`,
@@ -205,6 +212,8 @@ class PostgresChatLogStore implements ChatLogStore {
       messageSentAt: Math.round(r.message_sent_at),
       messageText: r.message_text,
       reason: r.reason,
+      reporterUserId: r.reporter_user_id ?? null,
+      reportedUserId: r.reported_user_id ?? null,
       createdAt: Math.round(r.created_at),
     }));
   }

@@ -147,3 +147,28 @@ Pruebas: `npx tsx test/i18n.test.ts`, `node test/errors-lang.mjs` (con el servid
 Al crear una sala se eligen dos valores (por defecto 3 y 3): **dimensión del cubo** (casillas por lado, de 2 a 6) y **dimensión de línea** (casillas en raya para ganar, de 2 hasta el tamaño del cubo).
 El servidor valida siempre lo que manda el cliente (`normalizeBoardConfig` en `logic.ts`): redondea, limita al rango y baja la línea si no cabe.
 Un cubo de 6 tiene 216 casillas; el máximo es 6 para que siga siendo cómodo de ver y de calcular. Pruebas: `npx tsx test/board.test.ts`.
+
+## Cuentas (inicio de sesión con Discord y Google)
+
+Para jugar online hay que iniciar sesión con Discord o Google. El servidor guarda solo el identificador estable del proveedor y el nombre que muestra, nunca el correo.
+Las cuentas nuevas quedan **pendientes** hasta que las apruebes. Los baneos son **por cuenta** (no por IP) y surten efecto al instante, incluso con la sesión abierta.
+
+Variables de entorno (Render, en `michi3d-server`):
+
+| Variable | Qué hace |
+|---|---|
+| `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` | Activan el inicio de sesión con Google (cliente OAuth de tipo "Aplicación web" en Google Cloud) |
+| `DISCORD_CLIENT_ID` y `DISCORD_CLIENT_SECRET` | Activan el inicio de sesión con Discord (aplicación en el portal de desarrolladores de Discord) |
+| `FRONTEND_URL` | Dirección del juego en Vercel, sin barra final. A ella se vuelve tras iniciar sesión, y de ella se aceptan las llamadas del navegador (CORS) |
+| `PUBLIC_SERVER_URL` | Dirección pública de este servidor (ej. `https://michi3d-server.onrender.com`). Se usa para los redirect_uri |
+| `SESSION_SECRET` | Clave larga y aleatoria para firmar las sesiones. Sin ella las sesiones mueren al reiniciar |
+| `AUTH_REQUIRED` | `false` hace opcional el inicio de sesión. Por defecto es obligatorio en cuanto hay un proveedor configurado |
+| `AUTH_REQUIRE_APPROVAL` | `false` aprueba solas las cuentas nuevas. Por defecto quedan pendientes |
+
+**Redirect URIs que hay que dar de alta en cada proveedor:**
+`https://TU-SERVIDOR/auth/google/callback` y `https://TU-SERVIDOR/auth/discord/callback`.
+
+**Aprobar y banear:** abre `https://TU-JUEGO/admin.html`, pega la `ADMIN_KEY` y pulsa cargar. O por API (todas con `Authorization: Bearer <ADMIN_KEY>`):
+`GET /admin/users?status=pending`, `POST /admin/users/<id>/approve`, `POST /admin/users/<id>/ban?reason=...`, `POST /admin/users/<id>/unban`.
+
+Pruebas: `npx tsx test/auth.test.ts` y `node test/auth-e2e.mjs` (recorrido completo con Discord y Google falsos).

@@ -16,6 +16,9 @@ import { translateServer } from "./servertext.js";
 import { errorText, pickLang, renderErrorPage } from "./errorpages.js";
 import { createChatLogStore, retentionConfig, DAY_MS } from "./chatlog.js";
 import type { ChatLogStore } from "./chatlog.js";
+import { createUserStore } from "./users.js";
+import type { UserStatus } from "./users.js";
+import { loadAuthConfig, checkSession, handleAuthHttp, applyCors } from "./auth.js";
 import {
   IpGuard,
   KeyedLimiter,
@@ -35,6 +38,53 @@ const roomManager = new RoomManager();
 // ---------- Registro del chat (moderación + protocolo general) ----------
 const chatLog: ChatLogStore = createChatLogStore(process.env.DATABASE_URL);
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
+
+// ---------- Cuentas (inicio de sesión con Discord o Google) ----------
+const authCfg = loadAuthConfig();
+const userStore = createUserStore(process.env.DATABASE_URL);
+const userSockets = new Map<string, Set<WebSocket>>(); // sockets abiertos de cada cuenta, para poder echarla al banearla
+
+/** Comprueba la sesión que manda el cliente al crear o unirse a una sala. userId null = juega sin cuenta (si se permite). */
+async function authenticate(token: unknown): Promise<{ ok: true; userId: string | null } | { ok: false; message: string }> {
+  try {
+    const check = await checkSession(authCfg, userStore, token);
+    if (check.ok) return { ok: true, userId: check.user.id };
+    if (check.reason === "banned") return { ok: false, message: "Tu cuenta está baneada." }; // un baneo cuenta aunque no se exija sesión
+    if (!authCfg.required) return { ok: true, userId: null };
+    if (check.reason === "pending") return { ok: false, message: "Tu cuenta está pendiente de aprobación." };
+    if (check.reason === "expired") return { ok: false, message: "Tu sesión caducó, vuelve a iniciar sesión." };
+    return { ok: false, message: "Tienes que iniciar sesión para jugar online." };
+  } catch (err) {
+    console.error("[auth] no se pudo comprobar la sesión:", err instanceof Error ? err.message : err);
+    return { ok: false, message: "No se pudo comprobar tu sesión, prueba otra vez." };
+  }
+}
+
+function registerUserSocket(userId: string, ws: WebSocket) {
+  let set = userSockets.get(userId);
+  if (!set) userSockets.set(userId, (set = new Set()));
+  set.add(ws);
+}
+
+function unregisterUserSocket(userId: string | null, ws: WebSocket) {
+  if (!userId) return;
+  const set = userSockets.get(userId);
+  if (!set) return;
+  set.delete(ws);
+  if (set.size === 0) userSockets.delete(userId);
+}
+
+/** Echa del juego a todas las conexiones de una cuenta (al banearla). */
+function kickUser(userId: string, message: string) {
+  for (const ws of [...(userSockets.get(userId) ?? [])]) {
+    send(ws, { type: "error", message });
+    ws.close(WS_CLOSE_POLICY, "banned");
+  }
+}
+
+function userIdOfPlayer(room: Room, playerId: number): string | null {
+  return room.players.find((p) => p.id === playerId)?.userId ?? null;
+}
 const CHAT_PURGE_INTERVAL_MS = 60 * 60 * 1000; // 1 h
 const MAX_REPORT_REASON_LENGTH = 300;
 
@@ -132,6 +182,8 @@ const httpServer = http.createServer(async (req, res) => {
     return respondError(req, res, 429, url, { "Retry-After": "30" });
   }
 
+  if (await handleAuthHttp(req, res, url, { cfg: authCfg, users: userStore })) return;
+
   if (!path.startsWith("/admin/")) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return respondError(req, res, 405, url, { Allow: "GET, HEAD" });
@@ -143,6 +195,14 @@ const httpServer = http.createServer(async (req, res) => {
       return;
     }
     return respondError(req, res, 404, url);
+  }
+
+  // El panel de cuentas (admin.html) vive en el dominio del juego y llama a este servidor: CORS solo para ese origen.
+  applyCors(req, res, authCfg);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
   }
 
   // Sin ADMIN_KEY configurada el panel no existe; con ella, solo con Authorization: Bearer <clave>.
@@ -193,6 +253,22 @@ const httpServer = http.createServer(async (req, res) => {
         return sendJson(res, 200, await chatLog.deleteRoom(roomId));
       }
     }
+    if (path === "/admin/users") {
+      if (req.method !== "GET") return respondError(req, res, 405, url, { Allow: "GET" });
+      const wanted = url.searchParams.get("status");
+      const status = wanted === "pending" || wanted === "approved" || wanted === "banned" ? (wanted as UserStatus) : null;
+      return sendJson(res, 200, await userStore.list(status, limit));
+    }
+    const userMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/(approve|ban|unban)$/);
+    if (userMatch) {
+      if (req.method !== "POST") return respondError(req, res, 405, url, { Allow: "POST" });
+      const [, userId, action] = userMatch;
+      const reason = (url.searchParams.get("reason") ?? "").slice(0, 200) || null;
+      const updated = await userStore.setStatus(userId, action === "ban" ? "banned" : "approved", reason);
+      if (!updated) return respondError(req, res, 404, url);
+      if (action === "ban") kickUser(userId, "Tu cuenta está baneada.");
+      return sendJson(res, 200, updated);
+    }
     return respondError(req, res, 404, url);
   } catch (err) {
     logError("admin", err);
@@ -220,6 +296,7 @@ interface SocketMeta {
   socketId: string;
   roomCode: string | null;
   lang: Lang; // idioma de los mensajes del servidor para esta conexión (español hasta que el cliente diga otro)
+  userId: string | null; // cuenta con la que se unió a una sala
 }
 const socketMeta = new WeakMap<WebSocket, SocketMeta>();
 
@@ -310,7 +387,7 @@ wss.on("connection", (ws, req) => {
   }
 
   const socketId = randomUUID();
-  socketMeta.set(ws, { socketId, roomCode: null, lang: "es" });
+  socketMeta.set(ws, { socketId, roomCode: null, lang: "es", userId: null });
   socketsById.set(socketId, ws);
 
   const connLimiter = new ConnectionLimiter(
@@ -330,7 +407,8 @@ wss.on("connection", (ws, req) => {
     console.warn(`[ws] Error de socket (se cierra esa conexión): ${err.message}`);
   });
 
-  ws.on("message", (raw) => {
+  ws.on("message", async (raw) => {
+   try {
     // Primera barrera: ritmo general por conexión. Cuenta TODO (también JSON basura).
     const nowMs = Date.now();
     const verdict = connLimiter.check(nowMs);
@@ -367,6 +445,11 @@ wss.on("connection", (ws, req) => {
           send(ws, { type: "error", message: termsError });
           return;
         }
+        const auth = await authenticate(msg.sessionToken);
+        if (!auth.ok) {
+          send(ws, { type: "error", message: auth.message });
+          return;
+        }
         if (roomManager.roomCount() >= limits.maxRooms) {
           send(ws, { type: "error", message: "El servidor está lleno ahora mismo, prueba en unos minutos." });
           return;
@@ -382,8 +465,13 @@ wss.on("connection", (ws, req) => {
           msg.lifeConfig,
           msg.abilitiesConfig,
           msg.shuffleConfig,
-          msg.boardConfig
+          msg.boardConfig,
+          auth.userId
         );
+        if (auth.userId) {
+          meta.userId = auth.userId;
+          registerUserSocket(auth.userId, ws);
+        }
         meta.roomCode = room.code;
         send(ws, {
           type: "room_created",
@@ -401,18 +489,27 @@ wss.on("connection", (ws, req) => {
           send(ws, { type: "error", message: termsError });
           return;
         }
+        const auth = await authenticate(msg.sessionToken);
+        if (!auth.ok) {
+          send(ws, { type: "error", message: auth.message });
+          return;
+        }
         // Anti fuerza bruta de códigos de sala: solo los intentos FALLIDOS consumen cupo.
         if (!failedJoinLimiter.canTake(ip, nowMs)) {
           send(ws, { type: "error", message: "Demasiados códigos que no existen, espera un poco." });
           return;
         }
-        const result = roomManager.joinRoom(msg.roomCode, msg.playerName, socketId);
+        const result = roomManager.joinRoom(msg.roomCode, msg.playerName, socketId, auth.userId);
         if ("error" in result) {
           failedJoinLimiter.tryTake(ip, nowMs);
           send(ws, { type: "error", message: result.error });
           return;
         }
         meta.roomCode = result.room.code;
+        if (auth.userId) {
+          meta.userId = auth.userId;
+          registerUserSocket(auth.userId, ws);
+        }
         send(ws, {
           type: "room_joined",
           roomCode: result.room.code,
@@ -614,6 +711,7 @@ wss.on("connection", (ws, req) => {
             text: result.message.text,
             sentAt: result.message.sentAt,
             termsVersion: TERMS_VERSION,
+            userId: userIdOfPlayer(result.room, result.message.playerId),
           })
           .catch((err) => logError("guardar mensaje", err));
         break;
@@ -689,6 +787,8 @@ wss.on("connection", (ws, req) => {
             messageSentAt: reported.sentAt,
             messageText: reported.text,
             reason,
+            reporterUserId: reporter.userId,
+            reportedUserId: userIdOfPlayer(room, reported.playerId),
           })
           .then(() => send(ws, { type: "report_received" }))
           .catch((err) => {
@@ -704,12 +804,16 @@ wss.on("connection", (ws, req) => {
         break;
       }
     }
+   } catch (err) {
+    console.error("[ws] error al procesar un mensaje:", err instanceof Error ? err.message : err);
+   }
   });
 
   ws.on("close", () => {
     const meta = socketMeta.get(ws);
     if (meta) handleDisconnect(socketId, meta);
     socketsById.delete(socketId);
+    unregisterUserSocket(socketMeta.get(ws)?.userId ?? null, ws);
     ipGuard.onClose(ip); // libera el cupo de conexiones simultáneas de esta IP
   });
 });
@@ -773,6 +877,21 @@ setInterval(() => {
     notifyConsumedEffects(room, consumedEffects);
   }
 }, TIMER_CHECK_INTERVAL_MS);
+
+userStore
+  .init()
+  .then(() => {
+    const providers = [authCfg.discord ? "discord" : null, authCfg.google ? "google" : null].filter(Boolean).join(" y ") || "ninguno";
+    console.log(
+      `[auth] Cuentas: ${userStore.kind}. Proveedores: ${providers}. Inicio de sesión ${authCfg.required ? "OBLIGATORIO" : "no obligatorio"}. Cuentas nuevas ${authCfg.requireApproval ? "pendientes de aprobación" : "aprobadas solas"}.`
+    );
+    if (authCfg.discord || authCfg.google) {
+      if (authCfg.sessionSecretIsRandom) console.warn("[auth] AVISO: sin SESSION_SECRET las sesiones se pierden al reiniciar el servidor.");
+      if (!authCfg.frontendUrl) console.warn("[auth] AVISO: sin FRONTEND_URL no se puede volver al juego tras iniciar sesión.");
+      if (userStore.kind === "memory") console.warn("[auth] AVISO: sin DATABASE_URL las cuentas y los baneos se pierden al reiniciar.");
+    }
+  })
+  .catch((err) => logError("inicializar cuentas", err));
 
 chatLog
   .init()

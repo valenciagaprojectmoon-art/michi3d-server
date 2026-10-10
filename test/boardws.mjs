@@ -5,7 +5,7 @@ async function create(boardConfig, ip) {
   const ws = new WebSocket("ws://localhost:8096", { headers: { "x-forwarded-for": ip } });
   const inbox = []; ws.on("message", (d) => inbox.push(JSON.parse(d.toString())));
   await new Promise((r) => ws.on("open", r));
-  ws.send(JSON.stringify({ type: "create_room", playerName: "A", acceptedTerms: "2026-10-02", ...(boardConfig ? { boardConfig } : {}) }));
+  ws.send(JSON.stringify({ type: "create_room", playerName: "A", acceptedTerms: "2026-10-09", ...(boardConfig ? { boardConfig } : {}) }));
   await sleep(300); ws.close();
   const m = inbox.find((x) => x.type === "room_created");
   return m?.state?.game;

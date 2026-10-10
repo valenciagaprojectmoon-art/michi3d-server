@@ -43,6 +43,7 @@ export interface RoomPlayer {
   connected: boolean;
   socketId: string | null; // referencia externa (id de conexión), null si desconectado
   isHost: boolean; // el creador original de la sala; único que puede cerrar/reabrir/terminar la partida
+  userId: string | null; // cuenta (Discord o Google) con la que entró; null si jugó sin cuenta
 }
 
 /**
@@ -158,7 +159,8 @@ export class RoomManager {
     lifeConfig: LifeConfig = { startingLife: 3 },
     abilitiesConfig: AbilitiesConfig = {},
     shuffleConfig: ShuffleConfig | null = null,
-    boardConfig: Partial<BoardConfig> | null = null
+    boardConfig: Partial<BoardConfig> | null = null,
+    userId: string | null = null
   ): { room: Room; player: RoomPlayer } {
     const code = this.generateRoomCode();
     const hostPlayer: RoomPlayer = {
@@ -167,6 +169,7 @@ export class RoomManager {
       connected: true,
       socketId,
       isHost: true,
+      userId,
     };
 
     const gamePlayers: Player[] = [
@@ -207,7 +210,8 @@ export class RoomManager {
   joinRoom(
     code: string,
     playerName: string,
-    socketId: string
+    socketId: string,
+    userId: string | null = null
   ): { room: Room; player: RoomPlayer; reconnected: boolean } | { error: string } {
     const room = this.rooms.get(code.toUpperCase());
     if (!room) return { error: `No existe ninguna sala con el código "${code}".` };
@@ -218,6 +222,8 @@ export class RoomManager {
     // la sala cerrada), porque es "volver a tu propio lugar", no "unirse de nuevo".
     const existing = room.players.find((p) => !p.connected && p.name === trimmedName);
     if (existing) {
+      // Con cuentas, nadie puede "volver" al sitio de otra persona solo escribiendo su nombre.
+      if (existing.userId && existing.userId !== userId) return { error: "Ese nombre ya lo usa otra cuenta en la sala." };
       existing.connected = true;
       existing.socketId = socketId;
       room.emptyAt = null;
@@ -241,6 +247,7 @@ export class RoomManager {
       connected: true,
       socketId,
       isHost: false,
+      userId,
     };
     room.players.push(newPlayer);
     room.game = {

@@ -15,7 +15,7 @@ function client(ip) {
     ws.on("unexpected-response", () => res(c));
   });
 }
-const T = "2026-10-02";
+const T = "2026-10-09";
 const errors = (c) => c.inbox.filter((m) => m.type === "error").map((m) => m.message);
 
 // 1) Mensaje demasiado grande
