@@ -12,4 +12,11 @@ for (const f of ["logic.ts", "abilities.ts", "protocol.ts"]) {
 }
 const v = (p: string) => fs.readFileSync(p, "utf8").match(/TERMS_VERSION = "([^"]+)"/)?.[1];
 ok(!!v("src/protocol.ts") && v("src/protocol.ts") === v(path.join(front, "protocol.ts")), `versión de términos igual en servidor y frontend (${v("src/protocol.ts")})`);
+// Sin puntos "·" ni viñetas "•" en nada de lo que se muestra en el sitio
+{ const bad: string[] = [];
+  const walk = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name);
+    if (e.isDirectory()) { if (e.name !== "node_modules" && e.name !== "dist") walk(f); }
+    else if (/\.(tsx?|html|css|md)$/.test(e.name) && /[·•]/.test(fs.readFileSync(f, "utf8"))) bad.push(f); } };
+  for (const d of [path.resolve("src"), path.resolve("..", "michi3d", "src"), path.resolve("..", "michi3d", "public")]) if (fs.existsSync(d)) walk(d);
+  ok(bad.length === 0, "ningún archivo del sitio contiene puntos \"·\" ni viñetas \"•\"" + (bad.length ? ": " + bad.join(", ") : "")); }
 console.log(fails === 0 ? "\nSYNC OK" : `\n${fails} FALLO(S)`); process.exit(fails ? 1 : 0);

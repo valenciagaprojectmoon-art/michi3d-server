@@ -134,7 +134,7 @@ export function renderErrorPage(status: number, lang: Lang, frontendUrl?: string
   <h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(text)}</p>
   ${back}
-  <p class="lang">${others.map((l) => `<a href="?lang=${l}">${LANG_NAMES[l]}</a>`).join(" · ")}</p>
+  <p class="lang">${others.map((l) => `<a href="?lang=${l}">${LANG_NAMES[l]}</a>`).join(" | ")}</p>
   <p class="brand">michi 3d</p>
 </main>
 </body>
