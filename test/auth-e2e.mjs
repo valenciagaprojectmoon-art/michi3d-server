@@ -128,6 +128,7 @@ try {
   ok(!evilAdmin.headers.get("access-control-allow-origin"), "CORS: el panel de administración NO se abre a otros orígenes");
   const preAdmin = await fetch(BASE + "/admin/users", { method: "OPTIONS", headers: { Origin: FRONT } });
   ok(preAdmin.status === 204 && preAdmin.headers.get("access-control-allow-headers")?.includes("Authorization"), "CORS: el panel de cuentas puede llamar con la clave");
+  ok(preAdmin.headers.get("access-control-allow-methods")?.includes("DELETE"), "CORS: el panel puede borrar el chat de una sala (DELETE)");
   room.ws.close();
 } catch (e) { console.log("EXCEPCIÓN", e); fails++; }
 finish();
