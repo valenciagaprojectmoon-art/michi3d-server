@@ -172,7 +172,7 @@ function respondError(
   res.end(JSON.stringify({ status, error: title, message: text }));
 }
 
-const httpServer = http.createServer(async (req, res) => {
+async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<unknown> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   const httpIp = clientIp(req, limits.trustedProxyHops);
@@ -274,6 +274,16 @@ const httpServer = http.createServer(async (req, res) => {
     logError("admin", err);
     return respondError(req, res, 500, url);
   }
+}
+
+// Cualquier fallo inesperado de una ruta (por ejemplo, la base de datos caída) responde 500 en vez de tumbar el proceso:
+// una promesa rechazada sin capturar hace que Node termine el servidor entero.
+const httpServer = http.createServer((req, res) => {
+  handleHttp(req, res).catch((err) => {
+    logError("http", err);
+    if (res.headersSent) return void res.end();
+    respondError(req, res, 500, new URL(req.url ?? "/", "http://localhost"));
+  });
 });
 
 // Peticiones que ni llegan a ser HTTP válido (cabeceras enormes, tiempo agotado, basura): sin esto Node
