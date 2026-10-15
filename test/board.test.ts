@@ -23,7 +23,7 @@ ok(Array.from({ length: 64 }, (_, i) => i).every((i) => coordToIndex(indexToCoor
 
 // validación
 const nc = normalizeBoardConfig;
-ok(JSON.stringify(nc()) === '{"size":3,"lineLength":3}' && JSON.stringify(nc(null)) === '{"size":3,"lineLength":3}' && JSON.stringify(nc({})) === '{"size":3,"lineLength":3}', "validación: por defecto 3 y 3");
+ok(JSON.stringify(nc()) === '{"size":3,"lineLength":3,"dimensions":3}' && JSON.stringify(nc(null)) === '{"size":3,"lineLength":3,"dimensions":3}' && JSON.stringify(nc({})) === '{"size":3,"lineLength":3,"dimensions":3}', "validación: por defecto 3 y 3");
 ok(nc({ size: 1, lineLength: 1 }).size === 2 && nc({ size: 1, lineLength: 1 }).lineLength === 2, "validación: mínimo 2 y 2");
 ok(nc({ size: 99 }).size === MAX_BOARD_SIZE && MAX_BOARD_SIZE === 6, "validación: máximo 6");
 ok(nc({ size: 4, lineLength: 9 }).lineLength === 4, "validación: la línea no supera el cubo");
@@ -86,5 +86,50 @@ ok(nc({ size: NaN as any, lineLength: "x" as any }).size === 3 && nc({ size: "5"
   const t1 = Date.now(); const b = createEmptyBoard(6); for (let i = 0; i < 200; i++) checkWinner(b, { size: 6, lineLength: 2 }); 
   ok(Date.now() - t1 < 1500, `200 comprobaciones de victoria en cubo 6, línea 2: ${Date.now() - t1} ms`);
 }
+// ---------- 4D ----------
+import { maxBoardSize } from "../src/logic.js";
+for (const n of [2, 3, 4]) {
+  const expected = ((n + 2) ** 4 - n ** 4) / 2; // líneas de un hipercubo n^4 con línea de n
+  ok(computeWinLines(n, n, 4).length === expected, `4D: ${n}x${n}x${n}x${n} con línea ${n}: ${expected} líneas`);
+}
+{ const n = 3; let pairs = 0; const N = n ** 4;
+  for (let a = 0; a < N; a++) for (let b = a + 1; b < N; b++) {
+    const A = indexToCoord(a, n), B = indexToCoord(b, n);
+    if (Math.max(Math.abs(A.x - B.x), Math.abs(A.y - B.y), Math.abs(A.z - B.z), Math.abs(A.w - B.w)) === 1) pairs++;
+  }
+  ok(computeWinLines(3, 2, 4).length === pairs, `4D: líneas de 2 en hipercubo 3 = ${pairs} (conteo independiente por pares vecinos)`); }
+ok(computeWinLines(3, 3, 3).length === 49 && getWinLines({ size: 3, lineLength: 3, dimensions: 3 }).length === 49, "3D: sigue habiendo 49 líneas");
+ok(getWinLines({ size: 3, lineLength: 3, dimensions: 4 }).length === 272 && getWinLines({ size: 3, lineLength: 3, dimensions: 3 }).length === 49, "la caché distingue 3D y 4D con el mismo tamaño");
+ok(Array.from({ length: 256 }, (_, i) => i).every((i) => coordToIndex(indexToCoord(i, 4), 4) === i), "4D: índice <-> coordenada ida y vuelta (256 casillas)");
+ok(computeWinLines(3, 3, 4).some((l) => { const w = l.map((i) => indexToCoord(i, 3).w); return new Set(w).size === 3 && l.every((i) => indexToCoord(i, 3).x === indexToCoord(l[0], 3).x); }), "4D: existen líneas que cruzan rodajas de la cuarta dimensión");
+ok(computeWinLines(3, 3, 3).every((l) => l.every((i) => indexToCoord(i, 3).w === 0)), "3D: ninguna línea sale de la rodaja w=0");
+// validación de dimensiones
+ok(nc({ dimensions: 4 }).dimensions === 4 && nc({ dimensions: 4 }).size === 3, "validación: 4D con tamaño por defecto 3");
+ok(nc({ dimensions: 4, size: 9 }).size === 4 && maxBoardSize(4) === 4 && maxBoardSize(3) === 6, "validación: en 4D el tamaño máximo es 4");
+ok(nc({ dimensions: 3, size: 9 }).size === 6, "validación: en 3D el máximo sigue siendo 6");
+ok(nc({ dimensions: 2 as any }).dimensions === 3 && nc({ dimensions: 5 as any }).dimensions === 3 && nc({ dimensions: "4" as any }).dimensions === 3 && nc({ dimensions: 1 as any }).dimensions === 3, "validación: solo 3D y 4D (2D, 5D o basura vuelven a 3D)");
+ok(nc({ dimensions: 4, size: 2, lineLength: 9 }).lineLength === 2, "validación: la línea no supera el tamaño en 4D");
+// partidas en 4D
+{ let g = createInitialState(undefined, undefined, undefined, { dimensions: 4, size: 2, lineLength: 2 });
+  ok(g.board.length === 16 && g.boardConfig.dimensions === 4, "4D tamaño 2: 16 casillas");
+  g = playMove(g, 0); g = playMove(g, 15);
+  ok(g.board[0] === 0 && g.board[15] === 1 && g.lastMoveIndex === 15, "4D: las jugadas se colocan en su casilla");
+  ok(resetGame(g).boardConfig.dimensions === 4 && resetGame(g).board.length === 16, "4D: reiniciar conserva las dimensiones"); }
+{ // línea a lo largo de la cuarta dimensión: casillas con x,y,z iguales y w = 0,1,2 (índices 0, 27, 54 en tamaño 3)
+  let g = createInitialState(undefined, undefined, undefined, { dimensions: 4, size: 3, lineLength: 3 });
+  g = playMove(g, 0); g = playMove(g, 1); g = playMove(g, 27); g = playMove(g, 2); g = playMove(g, 54);
+  ok(g.status.kind === "win" && (g.status as any).playerId === 0 && JSON.stringify((g.status as any).line.slice().sort((a: number, b: number) => a - b)) === "[0,27,54]", "4D: se gana con una línea que cruza las rodajas (casillas 0, 27 y 54)"); }
+{ let g = createInitialState(undefined, undefined, undefined, { dimensions: 4, size: 3, lineLength: 3 });
+  g = playMove(g, 0); g = playMove(g, 1); g = playMove(g, 27); g = playMove(g, 2);
+  ok(g.status.kind === "playing", "4D: dos de tres en la cuarta dimensión todavía no ganan"); }
+{ let g = createInitialState(undefined, undefined, undefined, { dimensions: 3, size: 3, lineLength: 3 });
+  ok(g.board.length === 27, "3D por defecto: sigue siendo 27 casillas"); }
+{ const m = new RoomManager(); const room = m.createRoom("A", "s0", { mode: "none" }, { startingLife: 3 }, {}, null, { dimensions: 4, size: 99, lineLength: 99 } as any).room;
+  ok(room.game.boardConfig.dimensions === 4 && room.game.boardConfig.size === 4 && room.game.board.length === 256, "sala: cliente pide 4D tamaño 99, el servidor lo deja en 4D tamaño 4 (256 casillas)"); }
+{ const t0 = Date.now(); const lines = computeWinLines(4, 2, 4); const ms = Date.now() - t0;
+  let pairs = 0; for (let a = 0; a < 256; a++) for (let b = a + 1; b < 256; b++) { const A = indexToCoord(a, 4), B = indexToCoord(b, 4); if (Math.max(Math.abs(A.x - B.x), Math.abs(A.y - B.y), Math.abs(A.z - B.z), Math.abs(A.w - B.w)) === 1) pairs++; }
+  ok(lines.length === pairs && ms < 3000, `4D tamaño 4, línea 2: ${lines.length} líneas (= ${pairs} pares) en ${ms} ms`);
+  const t1 = Date.now(); const b = createEmptyBoard(4, 4); for (let i = 0; i < 100; i++) checkWinner(b, { size: 4, lineLength: 2, dimensions: 4 });
+  ok(Date.now() - t1 < 3000, `100 comprobaciones de victoria en el peor 4D: ${Date.now() - t1} ms`); }
 console.log(fails === 0 ? "\nBOARD OK" : `\n${fails} FALLO(S)`);
 process.exit(fails ? 1 : 0);

@@ -114,7 +114,7 @@ export function renderErrorPage(status: number, lang: Lang, frontendUrl?: string
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>${status} | ${escapeHtml(title)} | michi 3d</title>
+<title>${status} | ${escapeHtml(title)} | michi súper-bidimensional</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #14161e; color: #d7dbe6; font: 16px/1.6 system-ui, -apple-system, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
@@ -135,7 +135,7 @@ export function renderErrorPage(status: number, lang: Lang, frontendUrl?: string
   <p>${escapeHtml(text)}</p>
   ${back}
   <p class="lang">${others.map((l) => `<a href="?lang=${l}">${LANG_NAMES[l]}</a>`).join(" | ")}</p>
-  <p class="brand">michi 3d</p>
+  <p class="brand">michi súper-bidimensional</p>
 </main>
 </body>
 </html>`;

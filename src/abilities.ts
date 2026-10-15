@@ -1,5 +1,5 @@
 /**
- * Sistema de habilidades de "Michi 3D". Construido como capa aparte sobre
+ * Sistema de habilidades de "Michi Súper-Bidimensional". Construido como capa aparte sobre
  * logic.ts: importa sus funciones de vida/turnos en vez de duplicarlas.
  *
  * Cada habilidad tiene su propia forma de parámetros (AbilityParams) y su

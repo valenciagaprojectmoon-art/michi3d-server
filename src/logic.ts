@@ -1,5 +1,5 @@
 /**
- * Lógica pura del juego "Michi 3D" (Tres en raya en cubo 3x3x3).
+ * Lógica pura del juego "Michi Súper-Bidimensional" (Tres en raya en cubo 3x3x3).
  * Sin dependencias de UI ni de motor 3D: solo estructuras de datos y funciones.
  */
 
@@ -10,6 +10,7 @@ export interface Coord {
   x: number;
   y: number;
   z: number;
+  w: number; // cuarta dimensión (siempre 0 en 3D)
 }
 
 /** Marca de un jugador. null = casilla vacía. */
@@ -36,15 +37,24 @@ export const CELL_COUNT = SIZE * SIZE * SIZE; // 27 (cubo por defecto)
 
 /** Límites razonables: de 2 (jugable) a 6 (216 casillas, aún cómodo de ver y de calcular). */
 export const MIN_BOARD_SIZE = 2;
-export const MAX_BOARD_SIZE = 6;
+export const MAX_BOARD_SIZE = 6; // en 3D (216 casillas)
+export const MAX_BOARD_SIZE_4D = 4; // en 4D (256 casillas: más ya no se puede ni ver ni jugar)
+export const MIN_DIMENSIONS = 3;
+export const MAX_DIMENSIONS = 4;
+
+/** Tamaño máximo según las dimensiones: un hipercubo crece muy rápido (n elevado a 4). */
+export function maxBoardSize(dimensions: number): number {
+  return dimensions === 4 ? MAX_BOARD_SIZE_4D : MAX_BOARD_SIZE;
+}
 export const MIN_LINE_LENGTH = 2;
 
 export interface BoardConfig {
-  size: number; // dimensión del cubo: casillas por lado (size³ casillas en total)
-  lineLength: number; // dimensión de línea: casillas en raya necesarias para ganar (nunca mayor que size)
+  size: number; // casillas por lado (size^dimensions casillas en total)
+  lineLength: number; // casillas en raya necesarias para ganar (nunca mayor que size)
+  dimensions: 3 | 4; // 3 = cubo, 4 = hipercubo (se juega como size cubos, uno por cada "rodaja" de la cuarta dimensión)
 }
 
-export const DEFAULT_BOARD_CONFIG: BoardConfig = { size: 3, lineLength: 3 };
+export const DEFAULT_BOARD_CONFIG: BoardConfig = { size: 3, lineLength: 3, dimensions: 3 };
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
@@ -53,27 +63,29 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 
 /**
  * Valida y corrige una configuración (el servidor NUNCA se fía de lo que manda el cliente):
- * enteros, cubo entre 2 y 6, línea entre 2 y el tamaño del cubo. Lo que falte usa el valor por defecto (3).
+ * 3 o 4 dimensiones, tamaño entre 2 y 6 (3D) o entre 2 y 4 (4D), línea entre 2 y el tamaño. Lo que falte usa el valor por defecto (3).
  */
 export function normalizeBoardConfig(input?: Partial<BoardConfig> | null): BoardConfig {
-  const size = clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+  const dimensions: 3 | 4 = input?.dimensions === 4 ? 4 : 3; // solo 3D y 4D: cualquier otra cosa vuelve a 3D
+  const size = clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, maxBoardSize(dimensions));
   const lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, MIN_LINE_LENGTH, size);
-  return { size, lineLength };
+  return { size, lineLength, dimensions };
 }
 
 // ---------- Conversión de coordenadas ----------
 
 /** Convierte coordenada 3D a índice lineal 0..26. */
 export function coordToIndex(c: Coord, size: number = SIZE): number {
-  return c.x + c.y * size + c.z * size * size;
+  return c.x + c.y * size + c.z * size * size + c.w * size * size * size;
 }
 
 /** Convierte índice lineal a coordenada 3D. */
 export function indexToCoord(i: number, size: number = SIZE): Coord {
   const x = i % size;
   const y = Math.floor(i / size) % size;
-  const z = Math.floor(i / (size * size));
-  return { x, y, z };
+  const z = Math.floor(i / (size * size)) % size;
+  const w = Math.floor(i / (size * size * size)); // 0 en 3D porque i < size³
+  return { x, y, z, w };
 }
 
 // ---------- Precálculo de líneas ganadoras ----------
@@ -95,13 +107,17 @@ export function indexToCoord(i: number, size: number = SIZE): Coord {
  * Se generan combinaciones con dirección canonicalizada (evitando duplicar
  * la misma línea en sentido inverso) usando un Set de líneas normalizadas.
  */
-export function computeWinLines(size: number = SIZE, lineLength: number = SIZE): WinLine[] {
+export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, dimensions: number = 3): WinLine[] {
+  const wRange = dimensions === 4 ? [-1, 0, 1] : [0]; // en 3D no hay movimiento en la cuarta dimensión
+  const wCount = dimensions === 4 ? size : 1;
   const directions: Coord[] = [];
   for (let dx = -1; dx <= 1; dx++) {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dz = -1; dz <= 1; dz++) {
-        if (dx === 0 && dy === 0 && dz === 0) continue;
-        directions.push({ x: dx, y: dy, z: dz });
+        for (const dw of wRange) {
+          if (dx === 0 && dy === 0 && dz === 0 && dw === 0) continue;
+          directions.push({ x: dx, y: dy, z: dz, w: dw });
+        }
       }
     }
   }
@@ -112,24 +128,26 @@ export function computeWinLines(size: number = SIZE, lineLength: number = SIZE):
   for (let x = 0; x < size; x++) {
     for (let y = 0; y < size; y++) {
       for (let z = 0; z < size; z++) {
-        for (const d of directions) {
-          const idxs: number[] = [];
-          let inside = true;
-          for (let step = 0; step < lineLength; step++) {
-            const p: Coord = { x: x + step * d.x, y: y + step * d.y, z: z + step * d.z };
-            if (!inBounds(p, size)) {
-              inside = false;
-              break;
+        for (let w = 0; w < wCount; w++) {
+          for (const d of directions) {
+            const idxs: number[] = [];
+            let inside = true;
+            for (let step = 0; step < lineLength; step++) {
+              const p: Coord = { x: x + step * d.x, y: y + step * d.y, z: z + step * d.z, w: w + step * d.w };
+              if (!inBounds(p, size)) {
+                inside = false;
+                break;
+              }
+              idxs.push(coordToIndex(p, size));
             }
-            idxs.push(coordToIndex(p, size));
-          }
-          if (!inside) continue;
+            if (!inside) continue;
 
-          // La misma línea se encuentra desde sus dos extremos: se deduplica por el conjunto de índices.
-          const key = [...idxs].sort((a, b) => a - b).join("-");
-          if (!seen.has(key)) {
-            seen.add(key);
-            lines.push(idxs);
+            // La misma línea se encuentra desde sus dos extremos: se deduplica por el conjunto de índices.
+            const key = [...idxs].sort((a, b) => a - b).join("-");
+            if (!seen.has(key)) {
+              seen.add(key);
+              lines.push(idxs);
+            }
           }
         }
       }
@@ -140,7 +158,7 @@ export function computeWinLines(size: number = SIZE, lineLength: number = SIZE):
 }
 
 function inBounds(c: Coord, size: number): boolean {
-  return c.x >= 0 && c.x < size && c.y >= 0 && c.y < size && c.z >= 0 && c.z < size;
+  return c.x >= 0 && c.x < size && c.y >= 0 && c.y < size && c.z >= 0 && c.z < size && c.w >= 0 && c.w < size;
 }
 
 // Caché: calcular las líneas de un cubo grande no es gratis y checkWinner se llama en cada jugada.
@@ -148,10 +166,10 @@ const winLinesCache = new Map<string, WinLine[]>();
 
 /** Líneas ganadoras de una configuración, calculadas una sola vez. */
 export function getWinLines(config: BoardConfig = DEFAULT_BOARD_CONFIG): WinLine[] {
-  const key = `${config.size}:${config.lineLength}`;
+  const key = `${config.dimensions}:${config.size}:${config.lineLength}`;
   let lines = winLinesCache.get(key);
   if (!lines) {
-    lines = computeWinLines(config.size, config.lineLength);
+    lines = computeWinLines(config.size, config.lineLength, config.dimensions);
     winLinesCache.set(key, lines);
   }
   return lines;
@@ -206,8 +224,8 @@ export interface GameState {
   turnStartedAt: number; // timestamp (ms) de cuándo empezó el turno actual, para calcular tiempo restante
 }
 
-export function createEmptyBoard(size: number = SIZE): Board {
-  return new Array(size * size * size).fill(null);
+export function createEmptyBoard(size: number = SIZE, dimensions: number = 3): Board {
+  return new Array(size ** dimensions).fill(null);
 }
 
 export const DEFAULT_PLAYERS: Player[] = [
@@ -231,7 +249,7 @@ export function createInitialState(
     maxLife[p.id] = lifeConfig.startingLife;
   }
   return {
-    board: createEmptyBoard(boardConfig.size),
+    board: createEmptyBoard(boardConfig.size, boardConfig.dimensions),
     lastMoveIndex: null,
     players,
     currentPlayerIndex: 0,

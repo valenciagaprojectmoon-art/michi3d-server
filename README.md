@@ -1,6 +1,6 @@
-# Michi 3D - Servidor
+# Michi Súper-Bidimensional - Servidor
 
-Servidor WebSocket para el modo online de Michi 3D. Coordina salas, turnos y estado del juego para 2 a 4 jugadores.
+Servidor WebSocket para el modo online de Michi Súper-Bidimensional. Coordina salas, turnos y estado del juego para 2 a 4 jugadores.
 
 Ver el README del frontend (`../michi3d/README.md`) para instrucciones completas de despliegue conjunto en Render + Vercel/Netlify.
 

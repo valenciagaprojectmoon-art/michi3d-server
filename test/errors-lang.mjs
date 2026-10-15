@@ -28,7 +28,7 @@ const HTML = { Accept: "text/html,application/xhtml+xml" };
   const h = await get("/no-existe", {}, "HEAD");
   ok(h.status === 404 && (await h.text()) === "", "HEAD → 404 sin cuerpo");
   const ok200 = await get("/health");
-  ok(ok200.status === 200 && (await ok200.text()) === "Michi 3D server", "/health y / siguen devolviendo 200 (health check)");
+  ok(ok200.status === 200 && (await ok200.text()) === "Michi Súper-Bidimensional server", "/health y / siguen devolviendo 200 (health check)");
   const root = await get("/");
   ok(root.status === 200, "/ devuelve 200");
 }

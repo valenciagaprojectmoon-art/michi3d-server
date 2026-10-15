@@ -1,5 +1,5 @@
 /**
- * Servidor WebSocket de Michi 3D multijugador.
+ * Servidor WebSocket de Michi Súper-Bidimensional multijugador.
  * Traduce mensajes del protocolo (protocol.ts) a llamadas sobre RoomManager,
  * y retransmite el estado resultante a todos los sockets conectados a la sala.
  */
@@ -191,7 +191,7 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): 
     if (path === "/" || path === "/health") {
       // Health check de Render y respuesta a visitas directas.
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Michi 3D server");
+      res.end("Michi Súper-Bidimensional server");
       return;
     }
     return respondError(req, res, 404, url);
@@ -922,5 +922,5 @@ chatLog
   .catch((err) => logError("inicializar", err));
 
 httpServer.listen(PORT, () => {
-  console.log(`Servidor Michi 3D escuchando en el puerto ${PORT}`);
+  console.log(`Servidor Michi Súper-Bidimensional escuchando en el puerto ${PORT}`);
 });
