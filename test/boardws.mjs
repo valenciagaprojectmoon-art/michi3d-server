@@ -23,7 +23,7 @@ ok(e?.boardConfig.size === 3 && e.boardConfig.lineLength === 3, "valores basura 
 const h = await create({ dimensions: 4, size: 3, lineLength: 3 }, "10.9.0.6");
 ok(h?.boardConfig.dimensions === 4 && h.boardConfig.size === 3 && h.board.length === 81, "4D tamaño 3: 81 casillas llegan al cliente");
 const h2 = await create({ dimensions: 4, size: 99, lineLength: 99 }, "10.9.0.7");
-ok(h2?.boardConfig.dimensions === 4 && h2.boardConfig.size === 4 && h2.board.length === 256, "4D pidiendo tamaño 99: el servidor lo limita a 4 (256 casillas)");
+ok(h2?.boardConfig.dimensions === 4 && h2.boardConfig.size === 6 && h2.board.length === 1296, "4D pidiendo tamaño 99: el servidor lo limita a 6 (1296 casillas)");
 const h3 = await create({ dimensions: 2, size: 3, lineLength: 3 }, "10.9.0.8");
 ok(h3?.boardConfig.dimensions === 3 && h3.board.length === 27, "dimensión 2D no existe: vuelve a 3D");
 const h4 = await create({ dimensions: 7, size: 3, lineLength: 3 }, "10.9.0.9");

@@ -38,7 +38,7 @@ export const CELL_COUNT = SIZE * SIZE * SIZE; // 27 (cubo por defecto)
 /** Límites razonables: de 2 (jugable) a 6 (216 casillas, aún cómodo de ver y de calcular). */
 export const MIN_BOARD_SIZE = 2;
 export const MAX_BOARD_SIZE = 6; // en 3D (216 casillas)
-export const MAX_BOARD_SIZE_4D = 4; // en 4D (256 casillas: más ya no se puede ni ver ni jugar)
+export const MAX_BOARD_SIZE_4D = 6; // en 4D (1296 casillas: calcular sus líneas cuesta menos de 0,1 s; dibujarlas es lo pesado)
 export const MIN_DIMENSIONS = 3;
 export const MAX_DIMENSIONS = 4;
 
@@ -162,7 +162,13 @@ function inBounds(c: Coord, size: number): boolean {
 }
 
 // Caché: calcular las líneas de un cubo grande no es gratis y checkWinner se llama en cada jugada.
+const MAX_CACHED_CONFIGS = 8;
 const winLinesCache = new Map<string, WinLine[]>();
+
+/** Solo para pruebas: cuántas configuraciones hay en la caché. */
+export function winLinesCacheSize(): number {
+  return winLinesCache.size;
+}
 
 /** Líneas ganadoras de una configuración, calculadas una sola vez. */
 export function getWinLines(config: BoardConfig = DEFAULT_BOARD_CONFIG): WinLine[] {
@@ -170,6 +176,11 @@ export function getWinLines(config: BoardConfig = DEFAULT_BOARD_CONFIG): WinLine
   let lines = winLinesCache.get(key);
   if (!lines) {
     lines = computeWinLines(config.size, config.lineLength, config.dimensions);
+    // Un hipercubo de 6 con línea 2 tiene más de 32.000 líneas: la caché guarda solo las configuraciones usadas hace poco.
+    if (winLinesCache.size >= MAX_CACHED_CONFIGS) winLinesCache.delete(winLinesCache.keys().next().value as string);
+    winLinesCache.set(key, lines);
+  } else {
+    winLinesCache.delete(key); // se vuelve a insertar para que cuente como usada hace poco
     winLinesCache.set(key, lines);
   }
   return lines;

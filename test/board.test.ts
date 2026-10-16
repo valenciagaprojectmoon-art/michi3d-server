@@ -87,8 +87,8 @@ ok(nc({ size: NaN as any, lineLength: "x" as any }).size === 3 && nc({ size: "5"
   ok(Date.now() - t1 < 1500, `200 comprobaciones de victoria en cubo 6, línea 2: ${Date.now() - t1} ms`);
 }
 // ---------- 4D ----------
-import { maxBoardSize } from "../src/logic.js";
-for (const n of [2, 3, 4]) {
+import { maxBoardSize, winLinesCacheSize } from "../src/logic.js";
+for (const n of [2, 3, 4, 5, 6]) {
   const expected = ((n + 2) ** 4 - n ** 4) / 2; // líneas de un hipercubo n^4 con línea de n
   ok(computeWinLines(n, n, 4).length === expected, `4D: ${n}x${n}x${n}x${n} con línea ${n}: ${expected} líneas`);
 }
@@ -105,7 +105,7 @@ ok(computeWinLines(3, 3, 4).some((l) => { const w = l.map((i) => indexToCoord(i,
 ok(computeWinLines(3, 3, 3).every((l) => l.every((i) => indexToCoord(i, 3).w === 0)), "3D: ninguna línea sale de la rodaja w=0");
 // validación de dimensiones
 ok(nc({ dimensions: 4 }).dimensions === 4 && nc({ dimensions: 4 }).size === 3, "validación: 4D con tamaño por defecto 3");
-ok(nc({ dimensions: 4, size: 9 }).size === 4 && maxBoardSize(4) === 4 && maxBoardSize(3) === 6, "validación: en 4D el tamaño máximo es 4");
+ok(nc({ dimensions: 4, size: 9 }).size === 6 && maxBoardSize(4) === 6 && maxBoardSize(3) === 6, "validación: en 4D el tamaño máximo es 6 (como en 3D)");
 ok(nc({ dimensions: 3, size: 9 }).size === 6, "validación: en 3D el máximo sigue siendo 6");
 ok(nc({ dimensions: 2 as any }).dimensions === 3 && nc({ dimensions: 5 as any }).dimensions === 3 && nc({ dimensions: "4" as any }).dimensions === 3 && nc({ dimensions: 1 as any }).dimensions === 3, "validación: solo 3D y 4D (2D, 5D o basura vuelven a 3D)");
 ok(nc({ dimensions: 4, size: 2, lineLength: 9 }).lineLength === 2, "validación: la línea no supera el tamaño en 4D");
@@ -125,11 +125,23 @@ ok(nc({ dimensions: 4, size: 2, lineLength: 9 }).lineLength === 2, "validación:
 { let g = createInitialState(undefined, undefined, undefined, { dimensions: 3, size: 3, lineLength: 3 });
   ok(g.board.length === 27, "3D por defecto: sigue siendo 27 casillas"); }
 { const m = new RoomManager(); const room = m.createRoom("A", "s0", { mode: "none" }, { startingLife: 3 }, {}, null, { dimensions: 4, size: 99, lineLength: 99 } as any).room;
-  ok(room.game.boardConfig.dimensions === 4 && room.game.boardConfig.size === 4 && room.game.board.length === 256, "sala: cliente pide 4D tamaño 99, el servidor lo deja en 4D tamaño 4 (256 casillas)"); }
-{ const t0 = Date.now(); const lines = computeWinLines(4, 2, 4); const ms = Date.now() - t0;
-  let pairs = 0; for (let a = 0; a < 256; a++) for (let b = a + 1; b < 256; b++) { const A = indexToCoord(a, 4), B = indexToCoord(b, 4); if (Math.max(Math.abs(A.x - B.x), Math.abs(A.y - B.y), Math.abs(A.z - B.z), Math.abs(A.w - B.w)) === 1) pairs++; }
-  ok(lines.length === pairs && ms < 3000, `4D tamaño 4, línea 2: ${lines.length} líneas (= ${pairs} pares) en ${ms} ms`);
-  const t1 = Date.now(); const b = createEmptyBoard(4, 4); for (let i = 0; i < 100; i++) checkWinner(b, { size: 4, lineLength: 2, dimensions: 4 });
-  ok(Date.now() - t1 < 3000, `100 comprobaciones de victoria en el peor 4D: ${Date.now() - t1} ms`); }
+  ok(room.game.boardConfig.dimensions === 4 && room.game.boardConfig.size === 6 && room.game.board.length === 1296, "sala: cliente pide 4D tamaño 99, el servidor lo deja en 4D tamaño 6 (1296 casillas)"); }
+{ const t0 = Date.now(); const lines = computeWinLines(6, 2, 4); const ms = Date.now() - t0;
+  let pairs = 0; for (let a = 0; a < 1296; a++) for (let b = a + 1; b < 1296; b++) { const A = indexToCoord(a, 6), B = indexToCoord(b, 6); if (Math.max(Math.abs(A.x - B.x), Math.abs(A.y - B.y), Math.abs(A.z - B.z), Math.abs(A.w - B.w)) === 1) pairs++; }
+  ok(lines.length === pairs && ms < 3000, `4D 6x6x6x6, línea 2: ${lines.length} líneas (= ${pairs} pares contados aparte) en ${ms} ms`);
+  const t1 = Date.now(); const b = createEmptyBoard(6, 4); for (let i = 0; i < 100; i++) checkWinner(b, { size: 6, lineLength: 2, dimensions: 4 });
+  ok(Date.now() - t1 < 4000, `100 comprobaciones de victoria en el peor caso (6x6x6x6, línea 2): ${Date.now() - t1} ms`); }
+{ let g = createInitialState(undefined, undefined, undefined, { dimensions: 4, size: 6, lineLength: 6 });
+  ok(g.board.length === 1296, "4D tamaño 6: 1296 casillas");
+  // seis a lo largo de la cuarta dimensión: casillas con x,y,z iguales y w = 0..5 (índices 0, 216, 432, ... con tamaño 6)
+  const mine = [0, 216, 432, 648, 864, 1080], other = [1, 2, 3, 4, 5];
+  for (let k = 0; k < 5; k++) { g = playMove(g, mine[k]); g = playMove(g, other[k]); }
+  ok(g.status.kind === "playing", "4D tamaño 6: cinco en la cuarta dimensión todavía no ganan");
+  g = playMove(g, mine[5]);
+  ok(g.status.kind === "win" && (g.status as any).line.length === 6 && (g.status as any).line.every((i: number) => mine.includes(i)), "4D tamaño 6: seis en la cuarta dimensión ganan"); }
+{ // la caché no crece sin límite aunque se usen muchas configuraciones distintas
+  for (const dims of [3, 4] as const) for (let size = 2; size <= 6; size++) for (let line = 2; line <= size; line++) getWinLines({ size, lineLength: line, dimensions: dims });
+  ok(winLinesCacheSize() <= 8, `la caché de líneas se limita a 8 configuraciones (${winLinesCacheSize()})`);
+  const a = getWinLines({ size: 3, lineLength: 3, dimensions: 3 }); ok(a.length === 49, "tras expulsar de la caché, la configuración vuelve a calcularse bien (49 líneas en 3D)"); }
 console.log(fails === 0 ? "\nBOARD OK" : `\n${fails} FALLO(S)`);
 process.exit(fails ? 1 : 0);

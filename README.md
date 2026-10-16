@@ -172,3 +172,9 @@ Variables de entorno (Render, en `michi3d-server`):
 `GET /admin/users?status=pending`, `POST /admin/users/<id>/approve`, `POST /admin/users/<id>/ban?reason=...`, `POST /admin/users/<id>/unban`.
 
 Pruebas: `npx tsx test/auth.test.ts` y `node test/auth-e2e.mjs` (recorrido completo con Discord y Google falsos).
+
+## Dimensiones del tablero (3D y 4D)
+
+Cada partida elige entre **3D** (cubo) y **4D** (hipercubo), con tamaño de 2 a 6 en las dos y la línea ganadora de 2 hasta el tamaño. No existe el 2D: el servidor lo rechaza y vuelve a 3D.
+Un hipercubo de 6 tiene 1296 casillas. En pantalla se dibuja como `tamaño` cubos sueltos (uno por cada valor de la cuarta coordenada) y las líneas ganadoras pueden cruzar de un cubo a otro.
+Calcular las líneas de un 6x6x6x6 (hasta 32.120 con línea 2) tarda menos de 0,1 s y se guarda en una caché de 8 configuraciones; lo pesado es dibujar las casillas.
