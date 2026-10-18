@@ -178,3 +178,17 @@ Pruebas: `npx tsx test/auth.test.ts` y `node test/auth-e2e.mjs` (recorrido compl
 Cada partida elige entre **3D** (cubo) y **4D** (hipercubo), con tamaño de 2 a 6 en las dos y la línea ganadora de 2 hasta el tamaño. No existe el 2D: el servidor lo rechaza y vuelve a 3D.
 Un hipercubo de 6 tiene 1296 casillas. En pantalla se dibuja como `tamaño` cubos sueltos (uno por cada valor de la cuarta coordenada) y las líneas ganadoras pueden cruzar de un cubo a otro.
 Calcular las líneas de un 6x6x6x6 (hasta 32.120 con línea 2) tarda menos de 0,1 s y se guarda en una caché de 8 configuraciones; lo pesado es dibujar las casillas.
+
+## Tablero fractal
+
+Además del tablero normal, cada partida puede jugarse sobre una **esponja fractal** de nivel 1 o 2 (regla de Menger aplicada a cada escala).
+Los huecos se guardan en el tablero con el valor `-1` (`HOLE` en `logic.ts`): nadie puede ocuparlos, la jugada al azar por tiempo nunca los elige y no cuentan para el empate.
+Una línea ganadora solo vale si ninguna de sus casillas es un hueco. En un fractal el tamaño lo fija el nivel (3 o 9 por lado) y la línea se acorta sola si con la longitud pedida no existiera ninguna línea posible.
+
+| Dimensiones | Nivel | Casillas jugables | Dimensión fractal |
+|---|---|---|---|
+| 3D | 1 | 20 de 27 | 2,73 |
+| 3D | 2 | 400 de 729 | 2,73 |
+| 4D | 1 | 72 de 81 | 3,89 |
+
+El nivel 2 en 4D no existe (serían 5184 casillas): el servidor lo baja a nivel 1. Pruebas: `npx tsx test/board.test.ts` (conteos contra cálculo combinatorio independiente y las 12 aristas del nivel 1).

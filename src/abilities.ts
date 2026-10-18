@@ -9,7 +9,7 @@
  */
 
 import type { GameState, Player } from "./logic.js";
-import { applyDamage, applyHeal, reduceMaxLife, applyBalance, nextEligiblePlayerIndex, overwriteCell } from "./logic.js";
+import { applyDamage, applyHeal, reduceMaxLife, applyBalance, nextEligiblePlayerIndex, overwriteCell, HOLE } from "./logic.js";
 
 // ---------- Catálogo de habilidades ----------
 
@@ -346,7 +346,7 @@ export function isValidTarget(
 export function isValidCellTarget(game: GameState, actingPlayerId: number, cellIndex: number): boolean {
   if (cellIndex < 0 || cellIndex >= game.board.length) return false;
   const owner = game.board[cellIndex];
-  if (owner === null) return false; // no se puede malversar una casilla vacía
+  if (owner === null || owner === HOLE) return false; // no se puede malversar una casilla vacía ni un hueco del fractal
   if (owner === actingPlayerId) return false; // no tiene sentido sobre tu propia marca
   return true;
 }

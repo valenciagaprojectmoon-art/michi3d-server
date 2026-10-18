@@ -52,9 +52,13 @@ export interface BoardConfig {
   size: number; // casillas por lado (size^dimensions casillas en total)
   lineLength: number; // casillas en raya necesarias para ganar (nunca mayor que size)
   dimensions: 3 | 4; // 3 = cubo, 4 = hipercubo (se juega como size cubos, uno por cada "rodaja" de la cuarta dimensión)
+  fractalLevel: 0 | 1 | 2; // 0 = tablero normal; 1 o 2 = esponja fractal (tipo Menger) con huecos; entonces size = 3^nivel
 }
 
-export const DEFAULT_BOARD_CONFIG: BoardConfig = { size: 3, lineLength: 3, dimensions: 3 };
+export const DEFAULT_BOARD_CONFIG: BoardConfig = { size: 3, lineLength: 3, dimensions: 3, fractalLevel: 0 };
+
+/** Valor de una casilla que es un HUECO del fractal: no es de nadie y nadie puede ocuparla (distinto de null, que es "vacía"). */
+export const HOLE = -1;
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
@@ -67,9 +71,49 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
  */
 export function normalizeBoardConfig(input?: Partial<BoardConfig> | null): BoardConfig {
   const dimensions: 3 | 4 = input?.dimensions === 4 ? 4 : 3; // solo 3D y 4D: cualquier otra cosa vuelve a 3D
-  const size = clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, maxBoardSize(dimensions));
-  const lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, MIN_LINE_LENGTH, size);
-  return { size, lineLength, dimensions };
+  let fractalLevel: 0 | 1 | 2 = input?.fractalLevel === 1 || input?.fractalLevel === 2 ? input.fractalLevel : 0;
+  if (dimensions === 4 && fractalLevel === 2) fractalLevel = 1; // el nivel 2 en 4D tendría 5184 casillas: demasiado para dibujarlo
+  // En un fractal el tamaño lo manda el nivel (3 o 9 por lado); en un tablero normal lo elige el creador.
+  const size = fractalLevel > 0 ? 3 ** fractalLevel : clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, maxBoardSize(dimensions));
+  let lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, MIN_LINE_LENGTH, size);
+  // Los huecos cortan las líneas: si con esta longitud no existe ninguna línea posible, nadie podría ganar nunca. Se acorta hasta que haya alguna.
+  if (fractalLevel > 0) {
+    while (lineLength > MIN_LINE_LENGTH && getWinLines({ size, lineLength, dimensions, fractalLevel }).length === 0) lineLength--;
+  }
+  return { size, lineLength, dimensions, fractalLevel };
+}
+
+// ---------- Fractal (esponja de Menger generalizada) ----------
+
+/**
+ * ¿Existe esta casilla en el fractal? Regla de Menger aplicada a CADA escala: en cada cifra en base 3 de las coordenadas,
+ * se quitan las casillas en las que casi todas las coordenadas valen 1 (la del medio). En 3D se quitan las que tienen 2 o más
+ * coordenadas en el medio (queda la esponja clásica: 20 de 27 en el nivel 1, 400 de 729 en el 2). En 4D, las que tienen 3 o más
+ * (quedan 72 de 81 en el nivel 1).
+ */
+export function isFractalCellPresent(c: Coord, level: number, dimensions: number): boolean {
+  const coords = dimensions === 4 ? [c.x, c.y, c.z, c.w] : [c.x, c.y, c.z];
+  const maxMiddles = dimensions - 2;
+  for (let scale = 0; scale < level; scale++) {
+    const unit = 3 ** scale;
+    let middles = 0;
+    for (const v of coords) if (Math.floor(v / unit) % 3 === 1) middles++;
+    if (middles > maxMiddles) return false;
+  }
+  return true;
+}
+
+/** Cuántas casillas quedan en el nivel 1 (20 en 3D, 72 en 4D). */
+export function fractalCellsPerLevel(dimensions: number): number {
+  let n = 0;
+  const size = 3;
+  for (let i = 0; i < size ** dimensions; i++) if (isFractalCellPresent(indexToCoord(i, size), 1, dimensions)) n++;
+  return n;
+}
+
+/** Dimensión fractal aproximada: ln(casillas por nivel) / ln(3). Unos 2,73 en 3D y 3,89 en 4D. */
+export function fractalDimension(dimensions: number): number {
+  return Math.log(fractalCellsPerLevel(dimensions)) / Math.log(3);
 }
 
 // ---------- Conversión de coordenadas ----------
@@ -107,7 +151,7 @@ export function indexToCoord(i: number, size: number = SIZE): Coord {
  * Se generan combinaciones con dirección canonicalizada (evitando duplicar
  * la misma línea en sentido inverso) usando un Set de líneas normalizadas.
  */
-export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, dimensions: number = 3): WinLine[] {
+export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, dimensions: number = 3, fractalLevel: number = 0): WinLine[] {
   const wRange = dimensions === 4 ? [-1, 0, 1] : [0]; // en 3D no hay movimiento en la cuarta dimensión
   const wCount = dimensions === 4 ? size : 1;
   const directions: Coord[] = [];
@@ -154,6 +198,10 @@ export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, 
     }
   }
 
+  // En un fractal una línea solo vale si NINGUNA de sus casillas es un hueco.
+  if (fractalLevel > 0) {
+    return lines.filter((line) => line.every((i) => isFractalCellPresent(indexToCoord(i, size), fractalLevel, dimensions)));
+  }
   return lines;
 }
 
@@ -172,10 +220,10 @@ export function winLinesCacheSize(): number {
 
 /** Líneas ganadoras de una configuración, calculadas una sola vez. */
 export function getWinLines(config: BoardConfig = DEFAULT_BOARD_CONFIG): WinLine[] {
-  const key = `${config.dimensions}:${config.size}:${config.lineLength}`;
+  const key = `${config.dimensions}:${config.size}:${config.lineLength}:${config.fractalLevel ?? 0}`;
   let lines = winLinesCache.get(key);
   if (!lines) {
-    lines = computeWinLines(config.size, config.lineLength, config.dimensions);
+    lines = computeWinLines(config.size, config.lineLength, config.dimensions, config.fractalLevel ?? 0);
     // Un hipercubo de 6 con línea 2 tiene más de 32.000 líneas: la caché guarda solo las configuraciones usadas hace poco.
     if (winLinesCache.size >= MAX_CACHED_CONFIGS) winLinesCache.delete(winLinesCache.keys().next().value as string);
     winLinesCache.set(key, lines);
@@ -235,8 +283,13 @@ export interface GameState {
   turnStartedAt: number; // timestamp (ms) de cuándo empezó el turno actual, para calcular tiempo restante
 }
 
-export function createEmptyBoard(size: number = SIZE, dimensions: number = 3): Board {
-  return new Array(size ** dimensions).fill(null);
+export function createEmptyBoard(size: number = SIZE, dimensions: number = 3, fractalLevel: number = 0): Board {
+  const board: Board = new Array(size ** dimensions).fill(null);
+  if (fractalLevel > 0) {
+    // Los huecos se marcan con HOLE: así playMove los rechaza como "ocupados", la jugada al azar no los elige y el empate no los cuenta.
+    for (let i = 0; i < board.length; i++) if (!isFractalCellPresent(indexToCoord(i, size), fractalLevel, dimensions)) board[i] = HOLE;
+  }
+  return board;
 }
 
 export const DEFAULT_PLAYERS: Player[] = [
@@ -260,7 +313,7 @@ export function createInitialState(
     maxLife[p.id] = lifeConfig.startingLife;
   }
   return {
-    board: createEmptyBoard(boardConfig.size, boardConfig.dimensions),
+    board: createEmptyBoard(boardConfig.size, boardConfig.dimensions, boardConfig.fractalLevel),
     lastMoveIndex: null,
     players,
     currentPlayerIndex: 0,
@@ -364,7 +417,7 @@ export function overwriteCell(
 ): GameState {
   if (state.status.kind !== "playing") return state;
   if (index < 0 || index >= state.board.length) return state;
-  if (state.board[index] === null) return state; // esta función es solo para casillas YA ocupadas
+  if (state.board[index] === null || state.board[index] === HOLE) return state; // solo para casillas YA ocupadas (ni vacías ni huecos)
 
   const board = [...state.board];
   board[index] = newOwnerId;

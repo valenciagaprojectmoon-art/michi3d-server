@@ -1,4 +1,4 @@
-import { computeWinLines, getWinLines, normalizeBoardConfig, checkWinner, createInitialState, playMove, resetGame, createEmptyBoard, indexToCoord, coordToIndex, MAX_BOARD_SIZE } from "../src/logic.js";
+import { computeWinLines, getWinLines, normalizeBoardConfig, checkWinner, createInitialState, playMove, resetGame, createEmptyBoard, indexToCoord, coordToIndex, MAX_BOARD_SIZE, isBoardFull } from "../src/logic.js";
 import { RoomManager } from "../src/rooms.js";
 let fails = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "OK   " : "FAIL ") + m); if (!c) fails++; };
@@ -23,7 +23,7 @@ ok(Array.from({ length: 64 }, (_, i) => i).every((i) => coordToIndex(indexToCoor
 
 // validación
 const nc = normalizeBoardConfig;
-ok(JSON.stringify(nc()) === '{"size":3,"lineLength":3,"dimensions":3}' && JSON.stringify(nc(null)) === '{"size":3,"lineLength":3,"dimensions":3}' && JSON.stringify(nc({})) === '{"size":3,"lineLength":3,"dimensions":3}', "validación: por defecto 3 y 3");
+ok(JSON.stringify(nc()) === '{"size":3,"lineLength":3,"dimensions":3,"fractalLevel":0}' && JSON.stringify(nc(null)) === '{"size":3,"lineLength":3,"dimensions":3,"fractalLevel":0}' && JSON.stringify(nc({})) === '{"size":3,"lineLength":3,"dimensions":3,"fractalLevel":0}', "validación: por defecto 3 y 3");
 ok(nc({ size: 1, lineLength: 1 }).size === 2 && nc({ size: 1, lineLength: 1 }).lineLength === 2, "validación: mínimo 2 y 2");
 ok(nc({ size: 99 }).size === MAX_BOARD_SIZE && MAX_BOARD_SIZE === 6, "validación: máximo 6");
 ok(nc({ size: 4, lineLength: 9 }).lineLength === 4, "validación: la línea no supera el cubo");
@@ -87,7 +87,7 @@ ok(nc({ size: NaN as any, lineLength: "x" as any }).size === 3 && nc({ size: "5"
   ok(Date.now() - t1 < 1500, `200 comprobaciones de victoria en cubo 6, línea 2: ${Date.now() - t1} ms`);
 }
 // ---------- 4D ----------
-import { maxBoardSize, winLinesCacheSize } from "../src/logic.js";
+import { maxBoardSize, winLinesCacheSize, HOLE, isFractalCellPresent, fractalCellsPerLevel, fractalDimension, applyTurnTimeout, overwriteCell } from "../src/logic.js";
 for (const n of [2, 3, 4, 5, 6]) {
   const expected = ((n + 2) ** 4 - n ** 4) / 2; // líneas de un hipercubo n^4 con línea de n
   ok(computeWinLines(n, n, 4).length === expected, `4D: ${n}x${n}x${n}x${n} con línea ${n}: ${expected} líneas`);
@@ -143,5 +143,76 @@ ok(nc({ dimensions: 4, size: 2, lineLength: 9 }).lineLength === 2, "validación:
   for (const dims of [3, 4] as const) for (let size = 2; size <= 6; size++) for (let line = 2; line <= size; line++) getWinLines({ size, lineLength: line, dimensions: dims });
   ok(winLinesCacheSize() <= 8, `la caché de líneas se limita a 8 configuraciones (${winLinesCacheSize()})`);
   const a = getWinLines({ size: 3, lineLength: 3, dimensions: 3 }); ok(a.length === 49, "tras expulsar de la caché, la configuración vuelve a calcularse bien (49 líneas en 3D)"); }
+// ---------- fractal (esponja de Menger) ----------
+const fb = (level: number, dims: 3 | 4 = 3) => createEmptyBoard(3 ** level, dims, level);
+const playable = (b: (number | null)[]) => b.filter((c) => c !== HOLE).length;
+ok(playable(fb(1)) === 20 && playable(fb(2)) === 400, "fractal 3D: 20 casillas en el nivel 1 y 400 en el nivel 2 (la esponja de Menger clásica)");
+// conteo independiente por combinatoria: k coordenadas en el medio, el resto en una de las 2 esquinas
+{ const c3 = 2 ** 3 + 3 * 2 ** 2;                      // 3D: 0 medios = 8, 1 medio = 3*4 = 12
+  const c4 = 2 ** 4 + 4 * 2 ** 3 + 6 * 2 ** 2;         // 4D: 0 medios = 16, 1 = 4*8 = 32, 2 = 6*4 = 24
+  ok(c3 === 20 && playable(fb(1)) === c3 && c4 === 72 && playable(fb(1, 4)) === c4, "fractal: los conteos 20 (3D) y 72 (4D) coinciden con el cálculo combinatorio independiente"); }
+ok(fractalCellsPerLevel(3) === 20 && fractalCellsPerLevel(4) === 72, "fractal: casillas por nivel");
+ok(Math.abs(fractalDimension(3) - Math.log(20) / Math.log(3)) < 1e-12 && fractalDimension(3).toFixed(2) === "2.73" && fractalDimension(4).toFixed(2) === "3.89", "fractal: dimensión fractal 2,73 en 3D y 3,89 en 4D");
+{ const b = fb(1); const idx = (x: number, y: number, z: number) => x + y * 3 + z * 9;
+  ok(b[idx(1, 1, 1)] === HOLE && [[1, 1, 0], [1, 1, 2], [1, 0, 1], [1, 2, 1], [0, 1, 1], [2, 1, 1]].every(([x, y, z]) => b[idx(x, y, z)] === HOLE), "fractal 3D nivel 1: el centro y los 6 centros de cara son huecos");
+  ok(b[idx(0, 0, 0)] === null && b[idx(2, 2, 2)] === null && b[idx(1, 0, 0)] === null && b[idx(0, 2, 1)] === null, "fractal 3D nivel 1: las esquinas y las aristas son casillas jugables"); }
+{ const b = fb(2); const idx = (x: number, y: number, z: number) => x + y * 9 + z * 81;
+  ok(b[idx(4, 4, 4)] === HOLE && b[idx(3, 3, 3)] === HOLE && b[idx(4, 3, 3)] === HOLE, "fractal 3D nivel 2: el bloque central entero (3..5) es hueco");
+  ok(b[idx(0, 0, 3)] === null && b[idx(1, 1, 0)] === HOLE && b[idx(0, 0, 1)] === null && b[idx(1, 0, 3)] === null, "fractal 3D nivel 2: el hueco se repite dentro de cada sub-cubo");
+  ok(b[idx(1, 1, 0)] === HOLE && b[idx(1, 1, 1)] === HOLE && b[idx(1, 0, 0)] === null, "fractal 3D nivel 2: huecos a escala pequeña dentro del primer sub-cubo"); }
+// líneas del nivel 1 en 3D: con línea 3 solo valen las 12 aristas del cubo (cualquier otra pasaría por un hueco)
+{ const idx = (x: number, y: number, z: number) => x + y * 3 + z * 9; const edges = new Set<string>();
+  for (const axis of [0, 1, 2]) for (const a of [0, 2]) for (const b2 of [0, 2]) { const cells = [0, 1, 2].map((t) => { const p = [a, b2]; p.splice(axis, 0, t); return idx(p[0], p[1], p[2]); }); edges.add(cells.slice().sort((x, y) => x - y).join(",")); }
+  const lines = getWinLines({ size: 3, lineLength: 3, dimensions: 3, fractalLevel: 1 });
+  ok(edges.size === 12 && lines.length === 12 && lines.every((l) => edges.has(l.slice().sort((x, y) => x - y).join(","))), "fractal 3D nivel 1, línea 3: las líneas son exactamente las 12 aristas del cubo"); }
+{ const n = 3, b = fb(1); let pairs = 0;
+  for (let a = 0; a < 27; a++) for (let c = a + 1; c < 27; c++) { const A = indexToCoord(a, n), B = indexToCoord(c, n);
+    if (b[a] !== HOLE && b[c] !== HOLE && Math.max(Math.abs(A.x - B.x), Math.abs(A.y - B.y), Math.abs(A.z - B.z)) === 1) pairs++; }
+  ok(getWinLines({ size: 3, lineLength: 2, dimensions: 3, fractalLevel: 1 }).length === pairs, `fractal 3D nivel 1, línea 2: ${pairs} líneas (= pares de casillas vecinas jugables contados aparte)`); }
+{ const cfgs = [[1, 3, 3], [2, 3, 3], [1, 4, 3]] as const; let allOk = true;
+  for (const [lvl, dims, size] of [[1, 3, 3], [2, 3, 9], [1, 4, 3]] as const) for (let k = 2; k <= size; k++) { const ls = getWinLines({ size, lineLength: k, dimensions: dims, fractalLevel: lvl });
+    const bd = createEmptyBoard(size, dims, lvl); if (!ls.length || !ls.every((l) => l.length === k && l.every((i) => bd[i] !== HOLE))) allOk = false; }
+  ok(allOk && cfgs.length === 3, "fractal: para toda longitud permitida hay líneas, todas con casillas jugables (nunca pasan por un hueco)"); }
+// validación del fractal
+ok(JSON.stringify(nc({ fractalLevel: 1 })) === '{"size":3,"lineLength":3,"dimensions":3,"fractalLevel":1}', "fractal: nivel 1 fija el tamaño en 3");
+ok(nc({ fractalLevel: 2, size: 4 }).size === 9 && nc({ fractalLevel: 2 }).fractalLevel === 2, "fractal: nivel 2 fija el tamaño en 9 (ignora el tamaño pedido)");
+ok(nc({ fractalLevel: 2, dimensions: 4 }).fractalLevel === 1 && nc({ fractalLevel: 2, dimensions: 4 }).size === 3, "fractal: en 4D el nivel 2 baja a 1 (5184 casillas serían demasiadas)");
+ok(nc({ fractalLevel: 5 as any }).fractalLevel === 0 && nc({ fractalLevel: "1" as any }).fractalLevel === 0 && nc({ fractalLevel: -1 as any }).fractalLevel === 0, "fractal: niveles inválidos vuelven a 0 (sin fractal)");
+ok(nc({ fractalLevel: 2, lineLength: 99 }).lineLength === 9 && nc({ fractalLevel: 1, lineLength: 99 }).lineLength === 3, "fractal: la línea no supera el tamaño");
+ok(nc({}).fractalLevel === 0 && createEmptyBoard(3, 3, 0).length === 27 && playable(createEmptyBoard(3, 3, 0)) === 27, "sin fractal: tablero normal sin huecos");
+// partidas con huecos
+{ let g = createInitialState(undefined, undefined, undefined, { fractalLevel: 1 });
+  ok(g.board.length === 27 && g.board.filter((c) => c === HOLE).length === 7, "fractal: el estado tiene 7 huecos en 27");
+  const before = g; const after = playMove(g, 13);
+  ok(after === before || (after.board[13] === HOLE && after.currentPlayerIndex === before.currentPlayerIndex), "fractal: jugar en un hueco no hace nada ni gasta el turno");
+  g = playMove(g, 0); g = playMove(g, 2); g = playMove(g, 9); g = playMove(g, 6); g = playMove(g, 18);
+  ok(g.status.kind === "win" && (g.status as any).playerId === 0 && JSON.stringify((g.status as any).line.slice().sort((a: number, b: number) => a - b)) === "[0,9,18]", "fractal: se gana con una arista del cubo (casillas 0, 9 y 18)"); }
+{ let g = createInitialState(undefined, undefined, undefined, { fractalLevel: 1, lineLength: 3 });
+  g = playMove(g, 0); g = playMove(g, 1); g = playMove(g, 4);  // 4 es el centro de una cara (x=1,y=1,z=0): hueco
+  ok(g.board[4] === HOLE && g.currentPlayerIndex === 0, "fractal: una casilla de centro de cara es un hueco y no se puede ocupar"); }
+{ const dummy = createInitialState(undefined, undefined, undefined, { fractalLevel: 1 });
+  ok(overwriteCell(dummy, 13, 0) === dummy || overwriteCell(dummy, 13, 0).board[13] === HOLE, "fractal: la habilidad que cambia casillas no puede tocar un hueco"); }
+{ // empate: el tablero está lleno cuando están ocupadas todas las casillas JUGABLES (los huecos no cuentan)
+  const b = createEmptyBoard(3, 3, 1);
+  for (let i = 0; i < b.length; i++) if (b[i] === null) b[i] = 0;
+  ok(isBoardFull(b) === true, "fractal: con todas las casillas jugables ocupadas el tablero está lleno (empate posible)");
+  const b2 = createEmptyBoard(3, 3, 1); for (let i = 0; i < b2.length; i++) if (b2[i] === null && i !== 0) b2[i] = 0;
+  ok(isBoardFull(b2) === false, "fractal: con una casilla jugable libre no está lleno"); }
+{ // jugada al azar al acabarse el tiempo: nunca elige un hueco
+  let bad = 0;
+  for (let trial = 0; trial < 300; trial++) {
+    const g = createInitialState(undefined, { mode: "turn", secondsPerTurn: 5, onTimeout: "random_move" } as any, undefined, { fractalLevel: 1 });
+    const after = applyTurnTimeout(g);
+    const placed = after.board.map((c, i) => (c !== g.board[i] ? i : -1)).filter((i) => i >= 0);
+    if (placed.length !== 1 || g.board[placed[0]] === HOLE) bad++;
+  }
+  ok(bad === 0, "fractal: 300 jugadas al azar por tiempo, ninguna cae en un hueco"); }
+{ const m = new RoomManager();
+  const r2 = m.createRoom("A", "s0", { mode: "none" }, { startingLife: 3 }, {}, null, { fractalLevel: 2, dimensions: 3, size: 3, lineLength: 3 } as any).room;
+  ok(r2.game.board.length === 729 && r2.game.board.filter((c) => c === HOLE).length === 329 && r2.game.boardConfig.fractalLevel === 2, "sala: fractal nivel 2 en 3D son 729 casillas, 329 huecos y 400 jugables");
+  const r4 = new RoomManager().createRoom("A", "s0", { mode: "none" }, { startingLife: 3 }, {}, null, { fractalLevel: 2, dimensions: 4 } as any).room;
+  ok(r4.game.boardConfig.fractalLevel === 1 && r4.game.board.length === 81 && r4.game.board.filter((c) => c === HOLE).length === 9, "sala: fractal en 4D se queda en nivel 1 (81 casillas, 9 huecos, 72 jugables)"); }
+{ const t0 = Date.now(); const l2 = getWinLines({ size: 9, lineLength: 2, dimensions: 3, fractalLevel: 2 }); const ms = Date.now() - t0;
+  ok(l2.length > 0 && ms < 3000, `fractal 3D nivel 2, línea 2: ${l2.length} líneas en ${ms} ms`); }
 console.log(fails === 0 ? "\nBOARD OK" : `\n${fails} FALLO(S)`);
 process.exit(fails ? 1 : 0);
