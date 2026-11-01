@@ -21,6 +21,17 @@ export interface User {
   lastLoginAt: number;
 }
 
+export type Outcome = "win" | "loss" | "draw";
+
+export interface LeaderboardRow {
+  name: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  games: number;
+  bestStreak: number;
+}
+
 export interface UserStore {
   readonly kind: "postgres" | "memory";
   init(): Promise<void>;
@@ -29,6 +40,12 @@ export interface UserStore {
   get(id: string): Promise<User | null>;
   list(status: UserStatus | null, limit: number): Promise<User[]>;
   setStatus(id: string, status: UserStatus, reason?: string | null): Promise<User | null>;
+  /** Suma el resultado de una partida a cada cuenta (y calcula su racha de victorias). */
+  recordGame(results: { userId: string; outcome: Outcome }[]): Promise<void>;
+  /** Clasificación pública: solo cuentas aprobadas, por victorias, luego por porcentaje de victorias. */
+  leaderboard(limit: number): Promise<LeaderboardRow[]>;
+  /** Borra las estadísticas de una cuenta (por ejemplo si se sospecha que las inflaba). */
+  resetStats(userId: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -66,6 +83,15 @@ class PostgresUserStore implements UserStore {
         UNIQUE (provider, provider_user_id)
       );
       CREATE INDEX IF NOT EXISTS users_status_idx ON users (status, created_at);
+      CREATE TABLE IF NOT EXISTS player_stats (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        wins INT NOT NULL DEFAULT 0,
+        losses INT NOT NULL DEFAULT 0,
+        draws INT NOT NULL DEFAULT 0,
+        streak INT NOT NULL DEFAULT 0,
+        best_streak INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
     `);
   }
 
@@ -116,6 +142,40 @@ class PostgresUserStore implements UserStore {
     return res.rows[0] ? PostgresUserStore.map(res.rows[0]) : null;
   }
 
+  async recordGame(results: { userId: string; outcome: Outcome }[]): Promise<void> {
+    for (const r of results) {
+      const win = r.outcome === "win" ? 1 : 0, loss = r.outcome === "loss" ? 1 : 0, draw = r.outcome === "draw" ? 1 : 0;
+      await this.pool.query(
+        `INSERT INTO player_stats (user_id, wins, losses, draws, streak, best_streak) VALUES ($1,$2,$3,$4,$2,$2)
+         ON CONFLICT (user_id) DO UPDATE SET
+           wins = player_stats.wins + EXCLUDED.wins,
+           losses = player_stats.losses + EXCLUDED.losses,
+           draws = player_stats.draws + EXCLUDED.draws,
+           streak = CASE WHEN EXCLUDED.wins = 1 THEN player_stats.streak + 1 ELSE 0 END,
+           best_streak = GREATEST(player_stats.best_streak, CASE WHEN EXCLUDED.wins = 1 THEN player_stats.streak + 1 ELSE 0 END),
+           updated_at = now()`,
+        [r.userId, win, loss, draw]
+      );
+    }
+  }
+
+  async leaderboard(limit: number): Promise<LeaderboardRow[]> {
+    const res = await this.pool.query(
+      `SELECT u.display_name, s.wins, s.losses, s.draws, s.best_streak, (s.wins + s.losses + s.draws) AS games
+       FROM player_stats s JOIN users u ON u.id = s.user_id
+       WHERE u.status = 'approved' AND (s.wins + s.losses + s.draws) > 0
+       ORDER BY s.wins DESC, (s.wins::float8 / (s.wins + s.losses + s.draws)) DESC, games ASC, u.display_name ASC
+       LIMIT $1`,
+      [limit]
+    );
+    return res.rows.map((r) => ({ name: String(r.display_name), wins: Number(r.wins), losses: Number(r.losses), draws: Number(r.draws), games: Number(r.games), bestStreak: Number(r.best_streak) }));
+  }
+
+  async resetStats(userId: string): Promise<boolean> {
+    const res = await this.pool.query(`DELETE FROM player_stats WHERE user_id = $1`, [userId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
@@ -126,6 +186,7 @@ class PostgresUserStore implements UserStore {
 class MemoryUserStore implements UserStore {
   readonly kind = "memory" as const;
   private users = new Map<string, User>();
+  private stats = new Map<string, { wins: number; losses: number; draws: number; streak: number; bestStreak: number }>();
 
   async init(): Promise<void> {}
 
@@ -162,6 +223,32 @@ class MemoryUserStore implements UserStore {
     u.status = status;
     u.banReason = status === "banned" ? reason : null;
     return { ...u };
+  }
+
+  async recordGame(results: { userId: string; outcome: Outcome }[]): Promise<void> {
+    for (const r of results) {
+      const s = this.stats.get(r.userId) ?? { wins: 0, losses: 0, draws: 0, streak: 0, bestStreak: 0 };
+      if (r.outcome === "win") { s.wins++; s.streak++; s.bestStreak = Math.max(s.bestStreak, s.streak); }
+      else { if (r.outcome === "loss") s.losses++; else s.draws++; s.streak = 0; }
+      this.stats.set(r.userId, s);
+    }
+  }
+
+  async leaderboard(limit: number): Promise<LeaderboardRow[]> {
+    const rows: LeaderboardRow[] = [];
+    for (const [id, s] of this.stats) {
+      const u = this.users.get(id);
+      const games = s.wins + s.losses + s.draws;
+      if (!u || u.status !== "approved" || games === 0) continue;
+      rows.push({ name: u.displayName, wins: s.wins, losses: s.losses, draws: s.draws, games, bestStreak: s.bestStreak });
+    }
+    return rows
+      .sort((a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games || a.games - b.games || a.name.localeCompare(b.name))
+      .slice(0, limit);
+  }
+
+  async resetStats(userId: string): Promise<boolean> {
+    return this.stats.delete(userId);
   }
 
   async close(): Promise<void> {}

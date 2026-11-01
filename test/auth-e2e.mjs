@@ -119,6 +119,43 @@ try {
   ok(!!c.inbox.find((m) => m.type === "room_joined"), "tras desbanear vuelve a entrar con la misma sesión"); c.ws.close();
   ok((await admin(`/admin/users/00000000-0000-0000-0000-000000000000/ban`, "POST")).status === 404, "banear una cuenta que no existe: 404");
 
+  // ---- clasificación: dos cuentas juegan de verdad ----
+  const board = async () => (await (await fetch(BASE + "/leaderboard")).json());
+  ok(Array.isArray(await board()) && (await board()).length === 0, "/leaderboard: sin partidas entre dos cuentas todavía, la clasificación está vacía");
+  const mkRoom = async (token, name) => { const c = await client(); c.send({ type: "create_room", playerName: name, acceptedTerms: TERMS, sessionToken: token, boardConfig: { size: 2, lineLength: 2, dimensions: 3 } }); await sleep(250); return c; };
+  const g1 = await mkRoom(ana.token, "Ana"); const code1 = g1.inbox.find((m) => m.type === "room_created").roomCode;
+  const g1b = await join(beto.token, code1, "Beto");
+  g1.send({ type: "play_move", index: 0 }); await sleep(150); g1b.send({ type: "play_move", index: 7 }); await sleep(150); g1.send({ type: "play_move", index: 1 }); await sleep(500);
+  ok(g1.inbox.some((m) => m.type === "state_update" && m.state.game.status.kind === "win"), "la partida entre dos cuentas termina con victoria de Ana");
+  let rows = await board();
+  ok(rows.length === 2 && rows[0].name === "ana" && rows[0].wins === 1 && rows[0].games === 1 && rows[0].rank === 1 && rows[1].name === "beto" && rows[1].losses === 1 && rows[1].wins === 0, "clasificación: Ana 1 victoria (puesto 1) y Beto 1 derrota");
+  ok(!("userId" in rows[0]) && !("id" in rows[0]) && !("email" in rows[0]), "la clasificación pública solo expone nombre y resultados, nunca ids ni correos");
+  await sleep(300); rows = await board();
+  ok(rows[0].games === 1, "una partida se cuenta una sola vez aunque el estado se reenvíe varias veces");
+  g1.send({ type: "rematch" }); g1b.send({ type: "rematch" }); await sleep(400);
+  g1.send({ type: "play_move", index: 0 }); await sleep(150); g1b.send({ type: "play_move", index: 7 }); await sleep(150); g1.send({ type: "play_move", index: 1 }); await sleep(500);
+  rows = await board();
+  ok(rows[0].name === "ana" && rows[0].wins === 2 && rows[0].games === 2 && rows[0].bestStreak === 2 && rows[1].losses === 2, "tras la revancha: Ana 2 victorias con racha 2 y Beto 2 derrotas");
+  const g2 = await mkRoom(ana.token, "Ana"); const code2 = g2.inbox.find((m) => m.type === "room_created").roomCode;
+  const g2b = await join(beto.token, code2, "Beto");
+  g2.send({ type: "end_game" }); await sleep(400);
+  rows = await board();
+  ok(rows[0].games === 2, "una partida cortada a mano por el creador no cuenta");
+  g2.ws.close(); g2b.ws.close();
+  await admin(`/admin/users/${bj.id}/ban?reason=prueba`, "POST"); await sleep(200);
+  ok(!(await board()).some((r) => r.name === "beto"), "una cuenta baneada desaparece de la clasificación");
+  await admin(`/admin/users/${bj.id}/unban`, "POST"); await sleep(200);
+  ok((await board()).some((r) => r.name === "beto" && r.losses === 2), "al desbanearla vuelve con sus resultados");
+  ok((await fetch(BASE + "/leaderboard", { method: "POST" })).status === 405, "/leaderboard solo admite GET");
+  const lim = await (await fetch(BASE + "/leaderboard?limit=1")).json();
+  ok(lim.length === 1 && lim[0].name === "ana", "?limit= se respeta");
+  const lbHeaders = await fetch(BASE + "/leaderboard", { headers: { Origin: "https://cualquier-juego.vercel.app" } });
+  ok(lbHeaders.headers.get("access-control-allow-origin") === "*", "/leaderboard se puede leer desde el juego (CORS abierto, sin nada secreto)");
+  ok((await admin(`/admin/users/${anaId}/reset-stats`)).status === 405, "reiniciar estadísticas exige POST");
+  const rs = await admin(`/admin/users/${anaId}/reset-stats`, "POST");
+  ok(rs.status === 200 && (await rs.json()).reset === true && !(await board()).some((r) => r.name === "ana"), "el admin puede reiniciar las estadísticas de una cuenta");
+  g1.ws.close(); g1b.ws.close();
+
   // CORS
   const pre = await fetch(BASE + "/auth/me", { method: "OPTIONS", headers: { Origin: "https://cualquier-juego.vercel.app", "Access-Control-Request-Headers": "authorization" } });
   ok(pre.status === 204 && pre.headers.get("access-control-allow-origin") === "*" && pre.headers.get("access-control-allow-headers")?.includes("Authorization"), "CORS: /auth/me y /auth/providers se pueden consultar desde el juego aunque FRONTEND_URL no coincida");

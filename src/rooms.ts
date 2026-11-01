@@ -62,6 +62,7 @@ export interface Room {
   emptyAt: number | null; // timestamp desde el que la sala quedó sin nadie conectado, o null si hay alguien
   locked: boolean; // true = nadie nuevo puede unirse (excepto el host, que siempre puede reentrar)
   rematchVotes: number[]; // jugadores que ya pidieron revancha (se vacía al reiniciar la partida)
+  statsRecorded: boolean; // si el resultado de esta partida ya se sumó a la clasificación (se limpia al reiniciar)
   chatHistory: ChatMessage[]; // últimos mensajes de la sala, para que un jugador que se une vea el contexto
 }
 
@@ -191,6 +192,7 @@ export class RoomManager {
       locked: false,
       chatHistory: [],
       rematchVotes: [],
+      statsRecorded: false,
     };
 
     this.rooms.set(code, room);
@@ -361,6 +363,7 @@ export class RoomManager {
     if (!room) return { error: "La sala ya no existe." };
     room.game = resetGame(room.game);
     room.rematchVotes = [];
+    room.statsRecorded = false;
     room.abilities = createInitialAbilitiesState(room.abilities.config, room.abilities.shuffle);
 
     if (room.abilities.shuffle) {

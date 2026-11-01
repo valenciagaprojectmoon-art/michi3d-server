@@ -17,6 +17,7 @@ import { errorText, pickLang, renderErrorPage } from "./errorpages.js";
 import { createChatLogStore, retentionConfig, DAY_MS } from "./chatlog.js";
 import type { ChatLogStore } from "./chatlog.js";
 import { createUserStore } from "./users.js";
+import { computeOutcomes } from "./stats.js";
 import type { UserStatus } from "./users.js";
 import { loadAuthConfig, checkSession, handleAuthHttp, applyCors } from "./auth.js";
 import {
@@ -184,6 +185,15 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): 
 
   if (await handleAuthHttp(req, res, url, { cfg: authCfg, users: userStore })) return;
 
+  if (path === "/leaderboard") {
+    if (req.method !== "GET" && req.method !== "HEAD") return respondError(req, res, 405, url, { Allow: "GET, HEAD" });
+    // Pública y sin nada secreto (solo nombre de cuenta y resultados): se acepta desde cualquier origen y se guarda unos segundos.
+    const top = Math.min(Math.max(Number(url.searchParams.get("limit")) || 20, 1), 100);
+    const rows = (await userStore.leaderboard(top)).map((r, i) => ({ rank: i + 1, ...r }));
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=15" });
+    return res.end(req.method === "HEAD" ? undefined : JSON.stringify(rows));
+  }
+
   if (!path.startsWith("/admin/")) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return respondError(req, res, 405, url, { Allow: "GET, HEAD" });
@@ -259,10 +269,11 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): 
       const status = wanted === "pending" || wanted === "approved" || wanted === "banned" ? (wanted as UserStatus) : null;
       return sendJson(res, 200, await userStore.list(status, limit));
     }
-    const userMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/(approve|ban|unban)$/);
+    const userMatch = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/(approve|ban|unban|reset-stats)$/);
     if (userMatch) {
       if (req.method !== "POST") return respondError(req, res, 405, url, { Allow: "POST" });
       const [, userId, action] = userMatch;
+      if (action === "reset-stats") return sendJson(res, 200, { reset: await userStore.resetStats(userId) });
       const reason = (url.searchParams.get("reason") ?? "").slice(0, 200) || null;
       const updated = await userStore.setStatus(userId, action === "ban" ? "banned" : "approved", reason);
       if (!updated) return respondError(req, res, 404, url);
@@ -345,7 +356,16 @@ function toPublicState(room: Room): PublicRoomState {
 }
 
 /** Envía el estado actualizado a todos los sockets conectados de una sala. */
+/** Cuando una partida termina (y no la cortó el creador), suma el resultado a la clasificación de las cuentas. Una sola vez por partida. */
+function recordStatsIfFinished(room: Room) {
+  if (room.statsRecorded || room.game.status.kind === "playing") return;
+  room.statsRecorded = true;
+  const results = computeOutcomes(room.game.status, room.players.map((p) => ({ id: p.id, userId: p.userId })));
+  if (results.length > 0) userStore.recordGame(results).catch((err) => logError("guardar resultados", err));
+}
+
 function broadcastState(room: Room) {
+  recordStatsIfFinished(room);
   const state = toPublicState(room);
   for (const player of room.players) {
     if (!player.connected || !player.socketId) continue;
