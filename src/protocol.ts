@@ -14,7 +14,7 @@ import type { AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig, PapaCalie
  * SI CAMBIAS LOS TEXTOS LEGALES de forma sustancial, cambia esta fecha: así todos
  * tendrán que volver a aceptar.
  */
-export const TERMS_VERSION = "2026-10-09";
+export const TERMS_VERSION = "2026-10-20";
 
 /** Idiomas que entiende el servidor para sus mensajes (el español es el idioma base). */
 export type Lang = "es" | "en" | "de";

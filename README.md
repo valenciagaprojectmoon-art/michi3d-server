@@ -192,3 +192,18 @@ Una línea ganadora solo vale si ninguna de sus casillas es un hueco. En un frac
 | 4D | 1 | 72 de 81 | 3,89 |
 
 El nivel 2 en 4D no existe (serían 5184 casillas): el servidor lo baja a nivel 1. Pruebas: `npx tsx test/board.test.ts` (conteos contra cálculo combinatorio independiente y las 12 aristas del nivel 1).
+
+## Clasificación (leaderboard)
+
+Cada partida que termina suma su resultado (victoria, derrota o empate) a las **cuentas** que jugaron, con su racha de victorias. Se calcula una sola vez por partida al terminar,
+en `recordStatsIfFinished` (`server.ts`), con las reglas de `stats.ts`:
+
+- Solo cuenta si participaron **al menos dos cuentas distintas**: no se puede inflar jugando contra invitados ni contra una misma cuenta.
+- Una partida que corta el creador a mano no cuenta. Ganar por eliminación cuenta como victoria.
+- Los invitados no figuran. Las cuentas pendientes y las baneadas no salen en la clasificación (al desbanear vuelven con sus resultados).
+
+`GET /leaderboard?limit=20` es público (CORS abierto, caché de 15 s) y solo devuelve `rank`, `name`, `wins`, `losses`, `draws`, `games` y `bestStreak`: nunca ids ni correos.
+Orden: más victorias, luego mejor porcentaje de victorias, luego menos partidas, luego nombre.
+Para quitar a alguien o reiniciar sus números: botón "reiniciar estadísticas" del panel (`admin.html`) o `POST /admin/users/<id>/reset-stats`.
+Los textos legales ya explican que el nombre de cuenta y los resultados se muestran en una clasificación pública, y por eso subió `TERMS_VERSION` (todos tendrán que aceptar de nuevo).
+Pruebas: `npx tsx test/stats.test.ts` y el recorrido completo en `node test/auth-e2e.mjs`.
