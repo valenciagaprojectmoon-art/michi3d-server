@@ -25,6 +25,7 @@ import {
   consumeEffectsForTurn,
   reshuffleHandForTurn,
 } from "./abilities.js";
+import { sanitizeRoomConfigs } from "./sanitize.js";
 import type { AbilitiesState, AbilitiesConfig, AbilityId, ActiveEffect, ShuffleConfig } from "./abilities.js";
 import type { ChatMessage } from "./protocol.js";
 
@@ -163,6 +164,7 @@ export class RoomManager {
     boardConfig: Partial<BoardConfig> | null = null,
     userId: string | null = null
   ): { room: Room; player: RoomPlayer } {
+    const cfg = sanitizeRoomConfigs({ timerConfig, lifeConfig, abilitiesConfig, shuffleConfig });
     const code = this.generateRoomCode();
     const hostPlayer: RoomPlayer = {
       id: 0,
@@ -177,14 +179,14 @@ export class RoomManager {
       { id: 0, name: hostPlayer.name, color: PLAYER_COLORS[0], eliminated: false },
     ];
 
-    let abilities = createInitialAbilitiesState(abilitiesConfig, shuffleConfig);
-    abilities = shuffleConfig
+    let abilities = createInitialAbilitiesState(cfg.abilitiesConfig, cfg.shuffleConfig);
+    abilities = cfg.shuffleConfig
       ? reshuffleHandForTurn(abilities, 0) // mano inicial sorteada
-      : { ...abilities, assigned: { 0: Object.keys(abilitiesConfig) as AbilityId[] } }; // pool completo fijo
+      : { ...abilities, assigned: { 0: Object.keys(cfg.abilitiesConfig) as AbilityId[] } }; // pool completo fijo
 
     const room: Room = {
       code,
-      game: createInitialState(gamePlayers, timerConfig, lifeConfig, boardConfig),
+      game: createInitialState(gamePlayers, cfg.timerConfig, cfg.lifeConfig, boardConfig),
       abilities,
       players: [hostPlayer],
       createdAt: Date.now(),
@@ -402,6 +404,9 @@ export class RoomManager {
     if (turnError) return { error: turnError };
 
     const historyLenBefore = room.abilities.turnHistory.length;
+    if ((room.game.currentLife[playerId] ?? 0) >= (room.game.maxLife[playerId] ?? 0)) {
+      return { error: "Ya tienes la vida al máximo: el chicharrón no te sirve ahora." };
+    }
     const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityChicharron(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Chicharrón ahora mismo." };
@@ -438,6 +443,10 @@ export class RoomManager {
     if (turnError) return { error: turnError };
 
     const historyLenBefore = room.abilities.turnHistory.length;
+    const alive = room.game.players.filter((pl) => !pl.eliminated).map((pl) => room.game.currentLife[pl.id] ?? 0);
+    if (alive.every((v) => v === alive[0])) {
+      return { error: "Todos tienen la misma vida: la balanza no cambiaría nada." };
+    }
     const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityBalanza(room.game, room.abilities, playerId, disconnectedIds(room));
     if (!result) return { error: "No puedes usar Balanza ahora mismo." };
