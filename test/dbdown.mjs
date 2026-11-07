@@ -32,7 +32,7 @@ try {
   const withToken = new WebSocket(`ws://localhost:${PORT}`); const inbox2 = []; withToken.on("message", (d) => inbox2.push(JSON.parse(d.toString())));
   await new Promise((r) => withToken.on("open", r));
   withToken.send(JSON.stringify({ type: "create_room", playerName: "Beto", acceptedTerms: TERMS, sessionToken: token })); await sleep(500);
-  ok(!!inbox2.find((m) => m.type === "error") && (await alive()), "con sesión y la base caída: aviso de error en vez de caerse");
+  ok(!!inbox2.find((m) => m.type === "room_created") && (await alive()), "con sesión guardada y la base caída (inicio de sesión opcional): entra como invitado en vez de bloquearse");
   ws.close(); withToken.close();
 } catch (e) { console.log("EXCEPCIÓN", e); fails++; }
 try { process.kill(-server.pid); } catch {}

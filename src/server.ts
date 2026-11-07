@@ -57,6 +57,8 @@ async function authenticate(token: unknown): Promise<{ ok: true; userId: string 
     return { ok: false, message: "Tienes que iniciar sesión para jugar online." };
   } catch (err) {
     console.error("[auth] no se pudo comprobar la sesión:", err instanceof Error ? err.message : err);
+    // Sin base de datos no se puede validar la cuenta: si el inicio de sesión es opcional, se entra como invitado.
+    if (!authCfg.required) return { ok: true, userId: null };
     return { ok: false, message: "No se pudo comprobar tu sesión, prueba otra vez." };
   }
 }
