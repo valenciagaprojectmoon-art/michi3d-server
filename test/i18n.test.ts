@@ -65,7 +65,7 @@ if (fs.existsSync(frontSrc)) {
     // nombres de habilidades y etiquetas que se traducen con t(variable)
     const lab = src.match(/const ABILITY_LABELS[^{]*\{([\s\S]*?)\};/);
     if (lab) for (const m of lab[1].matchAll(/: "((?:[^"\\]|\\.)*)"/g)) keys.add(unescape(m[1]));
-    for (const m of src.matchAll(/"(🥔 (?:Tomar|Pasar) Papa Caliente)"/g)) keys.add(m[1]);
+    for (const m of src.matchAll(/"((?:Tomar|Pasar) Papa Caliente)"/g)) keys.add(m[1]);
     const info = src.match(/const ABILITY_INFO[^{]*\{([\s\S]*?)\n\};/);
     if (info) for (const m of info[1].matchAll(/: "((?:[^"\\]|\\.)*)"/g)) keys.add(unescape(m[1]));
   }
