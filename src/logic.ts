@@ -11,6 +11,7 @@ export interface Coord {
   y: number;
   z: number;
   w: number; // cuarta dimensión (siempre 0 en 3D)
+  v?: number; // quinta dimensión (siempre 0 salvo en 5D)
 }
 
 /** Marca de un jugador. null = casilla vacía. */
@@ -40,18 +41,24 @@ export const MIN_BOARD_SIZE = 2;
 export const MAX_BOARD_SIZE = 6; // en 3D (216 casillas)
 export const MAX_BOARD_SIZE_4D = 6; // en 4D (1296 casillas: calcular sus líneas cuesta menos de 0,1 s; dibujarlas es lo pesado)
 export const MIN_DIMENSIONS = 3;
-export const MAX_DIMENSIONS = 4;
+export const MAX_DIMENSIONS = 5;
+
+// La categoría 5D tiene reglas propias: tablero más pequeño (4 por lado son 1024 casillas) y líneas de 3 como mínimo,
+// porque con cinco ejes cada casilla pertenece a muchísimas líneas y las líneas cortas se ganan en dos jugadas.
+export const MIN_BOARD_SIZE_5D = 3;
+export const MAX_BOARD_SIZE_5D = 4;
+export const MIN_LINE_LENGTH_5D = 3;
 
 /** Tamaño máximo según las dimensiones: un hipercubo crece muy rápido (n elevado a 4). */
 export function maxBoardSize(dimensions: number): number {
-  return dimensions === 4 ? MAX_BOARD_SIZE_4D : MAX_BOARD_SIZE;
+  return dimensions === 5 ? MAX_BOARD_SIZE_5D : dimensions === 4 ? MAX_BOARD_SIZE_4D : MAX_BOARD_SIZE;
 }
 export const MIN_LINE_LENGTH = 2;
 
 export interface BoardConfig {
   size: number; // casillas por lado (size^dimensions casillas en total)
   lineLength: number; // casillas en raya necesarias para ganar (nunca mayor que size)
-  dimensions: 3 | 4; // 3 = cubo, 4 = hipercubo (se juega como size cubos, uno por cada "rodaja" de la cuarta dimensión)
+  dimensions: 3 | 4 | 5; // 3 = cubo, 4 = hipercubo (size cubos, uno por cada valor de w), 5 = categoría 5D (una tabla de size×size cubos: w en columnas, v en filas)
   fractalLevel: 0 | 1 | 2; // 0 = tablero normal; 1 o 2 = esponja fractal (tipo Menger) con huecos; entonces size = 3^nivel
 }
 
@@ -70,15 +77,17 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
  * 3 o 4 dimensiones, tamaño entre 2 y 6 (3D) o entre 2 y 4 (4D), línea entre 2 y el tamaño. Lo que falte usa el valor por defecto (3).
  */
 export function normalizeBoardConfig(input?: Partial<BoardConfig> | null): BoardConfig {
-  const dimensions: 3 | 4 = input?.dimensions === 4 ? 4 : 3; // solo 3D y 4D: cualquier otra cosa vuelve a 3D
+  const dimensions: 3 | 4 | 5 = input?.dimensions === 5 ? 5 : input?.dimensions === 4 ? 4 : 3; // 3D, 4D o 5D: cualquier otra cosa vuelve a 3D
   let fractalLevel: 0 | 1 | 2 = input?.fractalLevel === 1 || input?.fractalLevel === 2 ? input.fractalLevel : 0;
-  if (dimensions === 4 && fractalLevel === 2) fractalLevel = 1; // el nivel 2 en 4D tendría 5184 casillas: demasiado para dibujarlo
+  if (dimensions >= 4 && fractalLevel === 2) fractalLevel = 1; // el nivel 2 en 4D tendría 5184 casillas (y en 5D 59049): demasiado para dibujarlo
   // En un fractal el tamaño lo manda el nivel (3 o 9 por lado); en un tablero normal lo elige el creador.
-  const size = fractalLevel > 0 ? 3 ** fractalLevel : clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, MIN_BOARD_SIZE, maxBoardSize(dimensions));
-  let lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, MIN_LINE_LENGTH, size);
+  const minSize = dimensions === 5 ? MIN_BOARD_SIZE_5D : MIN_BOARD_SIZE;
+  const minLine = dimensions === 5 ? MIN_LINE_LENGTH_5D : MIN_LINE_LENGTH;
+  const size = fractalLevel > 0 ? 3 ** fractalLevel : clampInt(input?.size, DEFAULT_BOARD_CONFIG.size, minSize, maxBoardSize(dimensions));
+  let lineLength = clampInt(input?.lineLength, DEFAULT_BOARD_CONFIG.lineLength, minLine, size);
   // Los huecos cortan las líneas: si con esta longitud no existe ninguna línea posible, nadie podría ganar nunca. Se acorta hasta que haya alguna.
   if (fractalLevel > 0) {
-    while (lineLength > MIN_LINE_LENGTH && getWinLines({ size, lineLength, dimensions, fractalLevel }).length === 0) lineLength--;
+    while (lineLength > minLine && getWinLines({ size, lineLength, dimensions, fractalLevel }).length === 0) lineLength--;
   }
   return { size, lineLength, dimensions, fractalLevel };
 }
@@ -92,7 +101,7 @@ export function normalizeBoardConfig(input?: Partial<BoardConfig> | null): Board
  * (quedan 72 de 81 en el nivel 1).
  */
 export function isFractalCellPresent(c: Coord, level: number, dimensions: number): boolean {
-  const coords = dimensions === 4 ? [c.x, c.y, c.z, c.w] : [c.x, c.y, c.z];
+  const coords = dimensions === 5 ? [c.x, c.y, c.z, c.w, c.v ?? 0] : dimensions === 4 ? [c.x, c.y, c.z, c.w] : [c.x, c.y, c.z];
   const maxMiddles = dimensions - 2;
   for (let scale = 0; scale < level; scale++) {
     const unit = 3 ** scale;
@@ -111,7 +120,7 @@ export function fractalCellsPerLevel(dimensions: number): number {
   return n;
 }
 
-/** Dimensión fractal aproximada: ln(casillas por nivel) / ln(3). Unos 2,73 en 3D y 3,89 en 4D. */
+/** Dimensión fractal aproximada: ln(casillas por nivel) / ln(3). Unos 2,73 en 3D, 3,89 en 4D y 4,96 en 5D. */
 export function fractalDimension(dimensions: number): number {
   return Math.log(fractalCellsPerLevel(dimensions)) / Math.log(3);
 }
@@ -120,7 +129,7 @@ export function fractalDimension(dimensions: number): number {
 
 /** Convierte coordenada 3D a índice lineal 0..26. */
 export function coordToIndex(c: Coord, size: number = SIZE): number {
-  return c.x + c.y * size + c.z * size * size + c.w * size * size * size;
+  return c.x + c.y * size + c.z * size * size + c.w * size * size * size + (c.v ?? 0) * size * size * size * size;
 }
 
 /** Convierte índice lineal a coordenada 3D. */
@@ -128,8 +137,9 @@ export function indexToCoord(i: number, size: number = SIZE): Coord {
   const x = i % size;
   const y = Math.floor(i / size) % size;
   const z = Math.floor(i / (size * size)) % size;
-  const w = Math.floor(i / (size * size * size)); // 0 en 3D porque i < size³
-  return { x, y, z, w };
+  const w = Math.floor(i / (size * size * size)) % size; // 0 en 3D porque i < size³
+  const v = Math.floor(i / (size * size * size * size)); // 0 salvo en 5D
+  return { x, y, z, w, v };
 }
 
 // ---------- Precálculo de líneas ganadoras ----------
@@ -152,15 +162,21 @@ export function indexToCoord(i: number, size: number = SIZE): Coord {
  * la misma línea en sentido inverso) usando un Set de líneas normalizadas.
  */
 export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, dimensions: number = 3, fractalLevel: number = 0): WinLine[] {
-  const wRange = dimensions === 4 ? [-1, 0, 1] : [0]; // en 3D no hay movimiento en la cuarta dimensión
-  const wCount = dimensions === 4 ? size : 1;
+  // Cada eje extra (w en 4D, v en 5D) solo se mueve si la partida tiene esa dimensión.
+  const range = (on: boolean) => (on ? [-1, 0, 1] : [0]);
+  const wRange = range(dimensions >= 4);
+  const vRange = range(dimensions === 5);
+  const wCount = dimensions >= 4 ? size : 1;
+  const vCount = dimensions === 5 ? size : 1;
   const directions: Coord[] = [];
   for (let dx = -1; dx <= 1; dx++) {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dz = -1; dz <= 1; dz++) {
         for (const dw of wRange) {
-          if (dx === 0 && dy === 0 && dz === 0 && dw === 0) continue;
-          directions.push({ x: dx, y: dy, z: dz, w: dw });
+          for (const dv of vRange) {
+            if (dx === 0 && dy === 0 && dz === 0 && dw === 0 && dv === 0) continue;
+            directions.push({ x: dx, y: dy, z: dz, w: dw, v: dv });
+          }
         }
       }
     }
@@ -173,24 +189,26 @@ export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, 
     for (let y = 0; y < size; y++) {
       for (let z = 0; z < size; z++) {
         for (let w = 0; w < wCount; w++) {
-          for (const d of directions) {
-            const idxs: number[] = [];
-            let inside = true;
-            for (let step = 0; step < lineLength; step++) {
-              const p: Coord = { x: x + step * d.x, y: y + step * d.y, z: z + step * d.z, w: w + step * d.w };
-              if (!inBounds(p, size)) {
-                inside = false;
-                break;
+          for (let v = 0; v < vCount; v++) {
+            for (const d of directions) {
+              const idxs: number[] = [];
+              let inside = true;
+              for (let step = 0; step < lineLength; step++) {
+                const p: Coord = { x: x + step * d.x, y: y + step * d.y, z: z + step * d.z, w: w + step * d.w, v: v + step * (d.v ?? 0) };
+                if (!inBounds(p, size)) {
+                  inside = false;
+                  break;
+                }
+                idxs.push(coordToIndex(p, size));
               }
-              idxs.push(coordToIndex(p, size));
-            }
-            if (!inside) continue;
+              if (!inside) continue;
 
-            // La misma línea se encuentra desde sus dos extremos: se deduplica por el conjunto de índices.
-            const key = [...idxs].sort((a, b) => a - b).join("-");
-            if (!seen.has(key)) {
-              seen.add(key);
-              lines.push(idxs);
+              // La misma línea se encuentra desde sus dos extremos: se deduplica por el conjunto de índices.
+              const key = [...idxs].sort((a, b) => a - b).join("-");
+              if (!seen.has(key)) {
+                seen.add(key);
+                lines.push(idxs);
+              }
             }
           }
         }
@@ -206,7 +224,8 @@ export function computeWinLines(size: number = SIZE, lineLength: number = SIZE, 
 }
 
 function inBounds(c: Coord, size: number): boolean {
-  return c.x >= 0 && c.x < size && c.y >= 0 && c.y < size && c.z >= 0 && c.z < size && c.w >= 0 && c.w < size;
+  const v = c.v ?? 0;
+  return c.x >= 0 && c.x < size && c.y >= 0 && c.y < size && c.z >= 0 && c.z < size && c.w >= 0 && c.w < size && v >= 0 && v < size;
 }
 
 // Caché: calcular las líneas de un cubo grande no es gratis y checkWinner se llama en cada jugada.

@@ -409,6 +409,9 @@ function notifyConsumedEffects(room: Room, effects: ActiveEffect[]) {
 // Índice inverso: socketId (string estable) -> conexión ws real.
 const socketsById = new Map<string, WebSocket>();
 
+const WS_CLOSE_EXPELLED = 4001; // el cliente lo reconoce y explica el motivo
+const HEARTBEAT_MS = (Number(process.env.WS_HEARTBEAT_SECONDS) > 0 ? Number(process.env.WS_HEARTBEAT_SECONDS) : 25) * 1000;
+
 wss.on("connection", (ws, req) => {
   const ip = clientIp(req, limits.trustedProxyHops);
   const admission = ipGuard.admit(ip, Date.now());
@@ -438,6 +441,24 @@ wss.on("connection", (ws, req) => {
   ws.on("error", (err) => {
     console.warn(`[ws] Error de socket (se cierra esa conexión): ${err.message}`);
   });
+
+  // Latido: si una conexión no responde al ping en un ciclo, se corta (así no quedan jugadores "conectados" fantasma).
+  let alive = true;
+  ws.on("pong", () => {
+    alive = true;
+  });
+  const heartbeat = setInterval(() => {
+    if (!alive) {
+      ws.terminate();
+      return;
+    }
+    alive = false;
+    try {
+      ws.ping();
+    } catch {
+      /* el socket ya se está cerrando */
+    }
+  }, HEARTBEAT_MS);
 
   ws.on("message", async (raw) => {
    try {
@@ -706,6 +727,7 @@ wss.on("connection", (ws, req) => {
           send(ws, { type: "error", message: result.error });
           return;
         }
+        broadcastToRoom(result.room, { type: "ability_used", ability: msg.ability, playerId: player.id, playerName: player.name });
         broadcastState(result.room);
         notifyConsumedEffects(result.room, result.consumedEffects);
         break;
@@ -831,6 +853,10 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      case "presence": {
+        if (meta.roomCode) roomManager.setPresence(meta.roomCode, socketId, msg.visible === true);
+        break;
+      }
       case "leave_room": {
         handleDisconnect(socketId, meta);
         break;
@@ -842,6 +868,7 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
+    clearInterval(heartbeat);
     const meta = socketMeta.get(ws);
     if (meta) handleDisconnect(socketId, meta);
     socketsById.delete(socketId);
@@ -867,6 +894,23 @@ setInterval(() => {
     l.sweep(now, 10 * 60 * 1000);
   }
 }, CLEANUP_INTERVAL_MS);
+
+// Expulsión por ausencia: quien lleva demasiado rato fuera de la ventana (o desconectado) libera su sitio.
+function envSeconds(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+const AWAY_KICK_MS = envSeconds("AWAY_KICK_SECONDS", 60) * 1000;
+const GONE_KICK_MS = envSeconds("GONE_KICK_SECONDS", 90) * 1000;
+setInterval(() => {
+  for (const { room, player, socketId } of roomManager.sweepAbsent(Date.now(), AWAY_KICK_MS, GONE_KICK_MS)) {
+    const ws = socketId ? socketsById.get(socketId) : undefined;
+    if (ws) ws.close(WS_CLOSE_EXPELLED, "expelled:away");
+    broadcastToRoom(room, { type: "player_disconnected", playerName: player.name });
+    broadcastState(room);
+    console.log(`[presencia] ${player.name} expulsado de la sala ${room.code} por ausencia.`);
+  }
+}, 5000);
 
 // Limpieza periódica de salas vacías (nadie conectado tras el TTL).
 setInterval(() => {

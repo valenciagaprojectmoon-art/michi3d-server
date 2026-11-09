@@ -14,6 +14,7 @@ import {
   useRelojRoto as abilityRelojRoto,
   useMalversionFondos as abilityMalversionFondos,
   usePostcognicion as abilityPostcognicion,
+  pickCopiedAbility,
   useBrujula as abilityBrujula,
   useAcelerador as abilityAcelerador,
   applyAceleradorLateness,
@@ -45,6 +46,9 @@ export interface RoomPlayer {
   socketId: string | null; // referencia externa (id de conexión), null si desconectado
   isHost: boolean; // el creador original de la sala; único que puede cerrar/reabrir/terminar la partida
   userId: string | null; // cuenta (Discord o Google) con la que entró; null si jugó sin cuenta
+  expelled?: boolean; // expulsado por ausencia: su hueco puede reutilizarse si no tiene fichas en el tablero
+  hiddenSince?: number | null; // desde cuándo tiene la pestaña fuera de la ventana (null = a la vista)
+  disconnectedAt?: number | null; // desde cuándo está desconectado
 }
 
 /**
@@ -224,12 +228,14 @@ export class RoomManager {
 
     // Reconexión: mismo nombre, estaba desconectado. Permitida siempre (incluso con
     // la sala cerrada), porque es "volver a tu propio lugar", no "unirse de nuevo".
-    const existing = room.players.find((p) => !p.connected && p.name === trimmedName);
+    const existing = room.players.find((p) => !p.connected && !p.expelled && p.name === trimmedName);
     if (existing) {
       // Con cuentas, nadie puede "volver" al sitio de otra persona solo escribiendo su nombre.
       if (existing.userId && existing.userId !== userId) return { error: "Ese nombre ya lo usa otra cuenta en la sala." };
       existing.connected = true;
       existing.socketId = socketId;
+      existing.disconnectedAt = null;
+      existing.hiddenSince = null;
       room.emptyAt = null;
       return { room, player: existing, reconnected: true };
     }
@@ -238,6 +244,32 @@ export class RoomManager {
     // desconectado, caso extremadamente raro) podría entrar; para cualquier otro, error.
     if (room.locked) {
       return { error: "El creador de la sala ha deshabilitado nuevos ingresos." };
+    }
+
+    // Un hueco dejado por alguien expulsado (sin fichas en el tablero) se reutiliza: así los jugadores
+    // fantasma no llenan la sala. Quien lo ocupa empieza de cero (vida y habilidades nuevas).
+    const vacant = room.players.find((p) => p.expelled && !room.game.board.some((m) => m === p.id));
+    if (vacant) {
+      const id = vacant.id;
+      vacant.name = trimmedName;
+      vacant.connected = true;
+      vacant.socketId = socketId;
+      vacant.userId = userId;
+      vacant.expelled = false;
+      vacant.hiddenSince = null;
+      vacant.disconnectedAt = null;
+      vacant.isHost = !room.players.some((p) => p !== vacant && p.isHost);
+      room.game = {
+        ...room.game,
+        players: room.game.players.map((pl) => (pl.id === id ? { id, name: trimmedName, color: PLAYER_COLORS[id], eliminated: false } : pl)),
+        currentLife: { ...room.game.currentLife, [id]: room.game.lifeConfig.startingLife },
+        maxLife: { ...room.game.maxLife, [id]: room.game.lifeConfig.startingLife },
+      };
+      room.abilities = room.abilities.shuffle
+        ? reshuffleHandForTurn(room.abilities, id)
+        : { ...room.abilities, assigned: { ...room.abilities.assigned, [id]: Object.keys(room.abilities.config) as AbilityId[] } };
+      room.emptyAt = null;
+      return { room, player: vacant, reconnected: false };
     }
 
     if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
@@ -521,6 +553,14 @@ export class RoomManager {
     const turnError = this.validateOwnTurn(room, playerId);
     if (turnError) return { error: turnError };
 
+    const copied = pickCopiedAbility(room.abilities.assigned[targetPlayerId] ?? []);
+    if (copied === "chicharron" && (room.game.currentLife[playerId] ?? 0) >= (room.game.maxLife[playerId] ?? 0)) {
+      return { error: "Ya tienes la vida al máximo: el chicharrón no te sirve ahora." };
+    }
+    if (copied === "balanza") {
+      const lives = room.game.players.filter((pl) => !pl.eliminated).map((pl) => room.game.currentLife[pl.id] ?? 0);
+      if (lives.every((v) => v === lives[0])) return { error: "Todos tienen la misma vida: la balanza no cambiaría nada." };
+    }
     const historyLenBefore = room.abilities.turnHistory.length;
     const turnStartedBefore = room.game.turnStartedAt;
     const result = abilityPostcognicion(
@@ -715,6 +755,8 @@ export class RoomManager {
       if (player) {
         player.connected = false;
         player.socketId = null;
+        player.disconnectedAt = Date.now();
+        player.hiddenSince = null;
         if (room.players.every((p) => !p.connected)) {
           room.emptyAt = Date.now();
         }
@@ -722,6 +764,68 @@ export class RoomManager {
       }
     }
     return null;
+  }
+
+  /** El cliente avisa de si su pestaña está a la vista. hiddenSince guarda desde cuándo no lo está. */
+  setPresence(code: string, socketId: string, visible: boolean): void {
+    const room = this.rooms.get(code.toUpperCase());
+    const player = room?.players.find((p) => p.socketId === socketId);
+    if (!player) return;
+    player.hiddenSince = visible ? null : (player.hiddenSince ?? Date.now());
+  }
+
+  /**
+   * Expulsa a un jugador: queda desconectado y marcado, deja de contar para turnos y efectos, y si era el
+   * anfitrión el cargo pasa a otro jugador conectado. No se borra (los ids son posiciones), pero su hueco
+   * se puede reutilizar (ver joinRoom).
+   */
+  expelPlayer(room: Room, player: RoomPlayer): void {
+    player.expelled = true;
+    player.connected = false;
+    player.socketId = null;
+    player.hiddenSince = null;
+    player.disconnectedAt = null;
+    if (player.isHost) {
+      const heir = room.players.find((p) => p !== player && p.connected && !p.expelled);
+      if (heir) {
+        player.isHost = false;
+        heir.isHost = true;
+      }
+    }
+    const a = room.abilities;
+    room.abilities = {
+      ...a,
+      papaCaliente: a.papaCaliente.holderId === player.id ? { holderId: null, turnsHeld: 0, awaitingPlay: false, passedOnce: false } : a.papaCaliente,
+      acelerador: { ...a.acelerador, activatedByPlayerIds: a.acelerador.activatedByPlayerIds.filter((id) => id !== player.id) },
+      activeEffects: a.activeEffects.filter((e) => e.targetPlayerId !== player.id),
+    };
+    room.rematchVotes = room.rematchVotes.filter((id) => id !== player.id);
+    if (room.game.status.kind === "playing" && room.game.players[room.game.currentPlayerIndex]?.id === player.id) {
+      const next = nextEligiblePlayerIndex(room.game.players, room.game.currentPlayerIndex, disconnectedIds(room));
+      if (next !== null) room.game = { ...room.game, currentPlayerIndex: next, turnStartedAt: Date.now() };
+    }
+  }
+
+  /**
+   * Expulsa a quien lleva demasiado rato fuera de la ventana (awayMs) o desconectado (goneMs). Nunca expulsa a quien
+   * sería el único presente: si nadie más está en la sala, no estorba a nadie. Devuelve a los expulsados para que
+   * el servidor cierre sus conexiones y avise a la sala.
+   */
+  sweepAbsent(now: number, awayMs: number, goneMs: number): { room: Room; player: RoomPlayer; socketId: string | null }[] {
+    const out: { room: Room; player: RoomPlayer; socketId: string | null }[] = [];
+    for (const room of this.rooms.values()) {
+      for (const p of room.players) {
+        if (p.expelled) continue;
+        const away = p.connected && p.hiddenSince != null && now - p.hiddenSince > awayMs;
+        const gone = !p.connected && p.disconnectedAt != null && now - p.disconnectedAt > goneMs;
+        if (!away && !gone) continue;
+        if (!room.players.some((o) => o !== p && o.connected && !o.expelled)) continue;
+        const socketId = p.socketId;
+        this.expelPlayer(room, p);
+        out.push({ room, player: p, socketId });
+      }
+    }
+    return out;
   }
 
   /** Elimina salas que llevan vacías más del TTL configurado. Llamar periódicamente. */

@@ -40,6 +40,7 @@ export type ClientMessage =
   | { type: "play_move"; index: number }
   | { type: "reset_game" }
   | { type: "leave_room" }
+  | { type: "presence"; visible: boolean } // la pestaña está a la vista o no; quien pasa mucho rato fuera de la ventana se expulsa
   | { type: "end_game" } // solo el host puede; el servidor valida
   | { type: "set_locked"; locked: boolean } // solo el host puede; el servidor valida
   | {
@@ -58,6 +59,7 @@ export type ClientMessage =
 // ---------- Mensajes que el SERVIDOR envía al cliente ----------
 
 export type ServerMessage =
+  | { type: "ability_used"; ability: AbilityId; playerId: number; playerName: string } // alguien usó una habilidad: todos ven la animación
   | { type: "room_created"; roomCode: string; playerId: number; state: PublicRoomState }
   | { type: "room_joined"; roomCode: string; playerId: number; state: PublicRoomState }
   | { type: "state_update"; state: PublicRoomState }

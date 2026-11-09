@@ -531,6 +531,15 @@ const NO_TARGET_ABILITIES: ReadonlySet<AbilityId> = new Set(["chicharron", "goys
  * y quedaba Z, no consume) - Postcognición en sí no tiene su propia regla
  * de consumo, hereda la de lo que copió.
  */
+/**
+ * Habilidad que copiaria Postcognicion de esta mano: la primera que no sea la propia Postcognicion.
+ * Antes se copiaba siempre la primera de la mano, y si esa era Postcognicion (o todos tenian la misma
+ * primera) la habilidad fallaba siempre. El cliente usa esta misma funcion para saber que objetivo extra pedir.
+ */
+export function pickCopiedAbility(hand: AbilityId[]): AbilityId | null {
+  return hand.find((a) => a !== "postcognicion") ?? null;
+}
+
 export function usePostcognicion(
   game: GameState,
   abilities: AbilitiesState,
@@ -547,7 +556,9 @@ export function usePostcognicion(
   const targetHand = getAssignedAbilities(abilities, targetPlayerId);
   if (targetHand.length === 0) return null; // "No permitas usar Postcognición sobre alguien sin habilidad activa"
 
-  const copiedAbility = targetHand[0];
+  const copiedAbility = pickCopiedAbility(targetHand);
+  if (copiedAbility === null) return null;
+  const ownHand = getAssignedAbilities(abilities, playerId);
 
   // Postcognición "presta" temporalmente la habilidad copiada a quien la usa,
   // ejecuta esa función de habilidad con playerId como actor, y luego el
@@ -612,12 +623,11 @@ export function usePostcognicion(
 
   if (!result) return null;
 
-  // Tras ejecutar la copia, el jugador vuelve a tener SOLO Postcognición
-  // (no se queda con la habilidad prestada), preservando cualquier otro
-  // cambio que la ejecución haya hecho en abilities (turnHistory, efectos, etc.).
+  // Tras ejecutar la copia, el jugador recupera SU mano de antes (no se queda con la habilidad prestada
+  // y tampoco pierde las demás), preservando cualquier otro cambio que la ejecución haya hecho en abilities.
   return {
     game: result.game,
-    abilities: { ...result.abilities, assigned: { ...result.abilities.assigned, [playerId]: ["postcognicion"] } },
+    abilities: { ...result.abilities, assigned: { ...result.abilities.assigned, [playerId]: ownHand } },
   };
 }
 

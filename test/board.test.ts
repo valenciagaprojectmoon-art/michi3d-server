@@ -107,7 +107,7 @@ ok(computeWinLines(3, 3, 3).every((l) => l.every((i) => indexToCoord(i, 3).w ===
 ok(nc({ dimensions: 4 }).dimensions === 4 && nc({ dimensions: 4 }).size === 3, "validación: 4D con tamaño por defecto 3");
 ok(nc({ dimensions: 4, size: 9 }).size === 6 && maxBoardSize(4) === 6 && maxBoardSize(3) === 6, "validación: en 4D el tamaño máximo es 6 (como en 3D)");
 ok(nc({ dimensions: 3, size: 9 }).size === 6, "validación: en 3D el máximo sigue siendo 6");
-ok(nc({ dimensions: 2 as any }).dimensions === 3 && nc({ dimensions: 5 as any }).dimensions === 3 && nc({ dimensions: "4" as any }).dimensions === 3 && nc({ dimensions: 1 as any }).dimensions === 3, "validación: solo 3D y 4D (2D, 5D o basura vuelven a 3D)");
+ok(nc({ dimensions: 2 as any }).dimensions === 3 && nc({ dimensions: 6 as any }).dimensions === 3 && nc({ dimensions: "4" as any }).dimensions === 3 && nc({ dimensions: 1 as any }).dimensions === 3, "validación: solo 3D, 4D y 5D (2D, 6D o basura vuelven a 3D)");
 ok(nc({ dimensions: 4, size: 2, lineLength: 9 }).lineLength === 2, "validación: la línea no supera el tamaño en 4D");
 // partidas en 4D
 { let g = createInitialState(undefined, undefined, undefined, { dimensions: 4, size: 2, lineLength: 2 });
